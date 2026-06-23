@@ -1,0 +1,42 @@
+name: Publish Yinman site from zip
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip-site:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract site files
+        run: |
+          set -euo pipefail
+          test -f yinman-creator-site.zip
+          rm -rf /tmp/yinman-site
+          mkdir -p /tmp/yinman-site
+          unzip -o yinman-creator-site.zip -d /tmp/yinman-site
+          if [ -d /tmp/yinman-site/yinman-creator-site ]; then
+            cp -a /tmp/yinman-site/yinman-creator-site/. .
+          else
+            cp -a /tmp/yinman-site/. .
+          fi
+
+      - name: Commit extracted site
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html README.md web outputs
+          if git diff --cached --quiet; then
+            echo "No site changes to commit."
+          else
+            git commit -m "Publish Yinman creator site files"
+            git push
+          fi
