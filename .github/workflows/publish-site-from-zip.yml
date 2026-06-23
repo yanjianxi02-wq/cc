@@ -22,11 +22,15 @@ jobs:
           rm -rf /tmp/yinman-site
           mkdir -p /tmp/yinman-site
           unzip -o yinman-creator-site.zip -d /tmp/yinman-site
+          src=/tmp/yinman-site
           if [ -d /tmp/yinman-site/yinman-creator-site ]; then
-            cp -a /tmp/yinman-site/yinman-creator-site/. .
-          else
-            cp -a /tmp/yinman-site/. .
+            src=/tmp/yinman-site/yinman-creator-site
           fi
+          cp "$src/index.html" ./index.html
+          cp "$src/README.md" ./README.md
+          rm -rf ./web ./outputs
+          cp -R "$src/web" ./web
+          cp -R "$src/outputs" ./outputs
 
       - name: Commit extracted site
         run: |
