@@ -21,11 +21,14 @@ jobs:
           test -f yinman-creator-site.zip
           rm -rf /tmp/yinman-site
           mkdir -p /tmp/yinman-site
-          unzip -o yinman-creator-site.zip -d /tmp/yinman-site
+          unzip -o yinman-creator-site.zip -d /tmp/yinman-site || true
           src=/tmp/yinman-site
           if [ -d /tmp/yinman-site/yinman-creator-site ]; then
             src=/tmp/yinman-site/yinman-creator-site
           fi
+          test -f "$src/index.html"
+          test -d "$src/web"
+          test -d "$src/outputs"
           cp "$src/index.html" ./index.html
           cp "$src/README.md" ./README.md
           rm -rf ./web ./outputs
