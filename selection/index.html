@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>2026秋季新品达人选款</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">in</span><div><strong>茵曼</strong><small>达人选款</small></div></div>
+        <nav class="side-nav">
+          <button class="nav-item active" data-view="selection"><i data-lucide="shopping-bag"></i><span>选款工作台</span></button>
+          <button class="nav-item" data-view="selected"><i data-lucide="list-checks"></i><span>已选清单</span></button>
+          <button class="nav-item" data-view="admin"><i data-lucide="layout-dashboard"></i><span>后台汇总</span></button>
+        </nav>
+        <div class="source-box"><span>数据来源</span><strong>BI 商品上新</strong><small>品类：茵曼服装 · 年份：2026 · 季节：秋季 · 渠道：线上 · 类目：全部</small></div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div><p class="eyebrow">2026 秋季新品</p><h1>达人选款工作台</h1></div>
+          <div class="top-actions"><div class="sync-pill"><i data-lucide="refresh-cw"></i><span>BI筛选：茵曼服装 / 2026秋季 / 线上 / 类目全部</span></div><button class="ghost-button" id="exportButton"><i data-lucide="download"></i><span>导出</span></button><button class="primary-button" id="submitTopButton"><i data-lucide="send"></i><span>提交选款</span></button></div>
+        </header>
+        <section class="status-strip">
+          <label class="creator-field"><span>达人</span><input id="creatorNameInput" type="text" maxlength="30" autocomplete="name" placeholder="请输入达人名称" /></label>
+          <div><span>截止时间</span><strong>2026-07-20 18:00</strong></div><div><span>已选</span><strong><b id="selectedCount">0</b> 款</strong></div><div><span>提交状态</span><strong id="submitStatus">选款中</strong></div>
+        </section>
+        <section class="filters" data-view-panel="selection"><div class="filter-row">
+          <label><span>品类</span><select id="categoryFilter"><option value="全部">全部品类</option></select></label>
+          <label><span>品牌计划等级</span><select id="levelFilter"><option value="全部">全部等级</option><option value="S">S级</option><option value="A">A级</option><option value="B">B级</option><option value="C">C级</option></select></label>
+          <label><span>价格带</span><select id="priceFilter"><option value="全部">全部价格</option><option value="0-199">199 以下</option><option value="200-299">200-299</option><option value="300-399">300-399</option><option value="400+">400 以上</option></select></label>
+          <label class="search-field"><span>款号</span><input id="searchInput" type="search" placeholder="搜索款号 / 品名" /></label>
+        </div></section>
+        <div class="content-grid">
+          <section class="product-area" data-view-panel="selection"><div class="section-head"><div><h2>商品池</h2><p>来自 BI 商品上新，筛选口径：品类=茵曼服装，年份=2026，季节=秋季，渠道=线上，类目=全部，款号/订货会为空，首次上新未勾选</p></div><span id="resultCount">0 款</span></div><div class="product-grid" id="productGrid"></div></section>
+          <aside class="selection-drawer" data-view-panel="selection"><div class="drawer-head"><div><h2>已选清单</h2><p>提交前可随时调整</p></div><span id="drawerCount">0</span></div><div class="selected-list compact" id="selectedDrawer"></div><button class="primary-button full" id="submitDrawerButton"><i data-lucide="send"></i><span>提交选款</span></button></aside>
+        </div>
+        <section class="selected-page hidden" data-view-panel="selected"><div class="section-head"><div><h2>已选商品确认</h2><p>填写意向后提交给后台</p></div><button class="primary-button" id="submitListButton"><i data-lucide="send"></i><span>提交选款</span></button></div><div class="selected-table" id="selectedTable"></div></section>
+        <section class="admin-page hidden" data-view-panel="admin"><div class="section-head"><div><h2>后台汇总预览</h2><p>品牌方收到的达人选款结果</p></div><button class="ghost-button" id="adminExportButton"><i data-lucide="file-spreadsheet"></i><span>导出明细</span></button></div><div class="admin-kpis"><div><span>活动商品</span><strong id="adminProductCount">0</strong></div><div><span>已提交达人</span><strong id="adminSubmitted">0</strong></div><div><span>本达人已选</span><strong id="adminSelected">0</strong></div><div><span>热门品类</span><strong id="adminHotCategory">-</strong></div></div><div class="admin-panels"><div class="admin-card"><h3>商品热度汇总</h3><div id="productSummary"></div></div><div class="admin-card"><h3>达人提交明细</h3><div id="creatorSummary"></div></div></div></section>
+      </main>
+    </div>
+    <div class="modal hidden" id="detailModal"><div class="modal-panel"><button class="icon-button modal-close" id="closeModal" aria-label="关闭"><i data-lucide="x"></i></button><div id="detailContent"></div></div></div><div class="toast hidden" id="toast"></div>
+    <script src="./products-data.js"></script><script src="./app.js"></script>
+  </body>
+</html>
