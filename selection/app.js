@@ -74,6 +74,7 @@ const els = {
   adminLoginPanel: document.getElementById("adminLoginPanel"),
   adminDashboard: document.getElementById("adminDashboard"),
   adminEmailInput: document.getElementById("adminEmailInput"),
+  adminPasswordInput: document.getElementById("adminPasswordInput"),
   adminLoginButton: document.getElementById("adminLoginButton"),
   adminLogoutButton: document.getElementById("adminLogoutButton"),
   adminRefreshButton: document.getElementById("adminRefreshButton"),
@@ -517,23 +518,25 @@ async function loginAdmin() {
     showToast("请输入管理员邮箱");
     return;
   }
+  const password = els.adminPasswordInput.value;
+  if (!password) {
+    showToast("请输入密码");
+    return;
+  }
   if (email.toLowerCase() !== "yanjianxi02@gmail.com") {
     showToast("该邮箱没有后台权限");
     return;
   }
   els.adminLoginButton.disabled = true;
-  const { error } = await cloud.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: `${location.origin}${location.pathname}`,
-    },
-  });
+  const { error } = await cloud.auth.signInWithPassword({ email, password });
   els.adminLoginButton.disabled = false;
   if (error) {
-    showToast("登录链接发送失败");
+    showToast("邮箱或密码错误");
     return;
   }
-  showToast("登录链接已发送，请查收邮箱");
+  els.adminPasswordInput.value = "";
+  showToast("登录成功");
+  await syncAdminSession();
 }
 
 async function logoutAdmin() {
@@ -724,6 +727,9 @@ document.getElementById("exportButton").addEventListener("click", () => {
 });
 
 els.adminLoginButton.addEventListener("click", loginAdmin);
+els.adminPasswordInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loginAdmin();
+});
 els.adminLogoutButton.addEventListener("click", logoutAdmin);
 els.adminRefreshButton.addEventListener("click", loadAdminData);
 els.adminExportButton.addEventListener("click", exportAdminCsv);
