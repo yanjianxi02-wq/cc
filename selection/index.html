@@ -31,6 +31,10 @@
             <i data-lucide="layout-dashboard"></i>
             <span>后台汇总</span>
           </button>
+          <button class="nav-item" data-view="brand">
+            <i data-lucide="sliders-horizontal"></i>
+            <span>商品池调整</span>
+          </button>
         </nav>
 
         <div class="source-box">
@@ -147,6 +151,7 @@
               <i data-lucide="send"></i>
               <span>提交选款</span>
             </button>
+            <div class="smart-analysis compact-analysis" id="quickAnalysis"></div>
           </aside>
         </div>
 
@@ -162,6 +167,7 @@
             </button>
           </div>
           <div class="selected-table" id="selectedTable"></div>
+          <div class="smart-analysis full-analysis" id="fullAnalysis"></div>
         </section>
 
         <section class="admin-page hidden" data-view-panel="admin">
@@ -203,8 +209,61 @@
               <div><span>热门品类</span><strong id="adminHotCategory">-</strong></div>
             </div>
             <div class="admin-panels">
-              <div class="admin-card"><h3>商品热度汇总</h3><div id="productSummary"></div></div>
+              <div class="admin-card" id="productSummaryCard">
+                <button class="collapse-toggle" id="productSummaryToggle">
+                  <span>商品热度汇总</span>
+                  <i data-lucide="chevron-up"></i>
+                </button>
+                <div id="productSummaryPanel">
+                  <div id="productSummary"></div>
+                </div>
+              </div>
               <div class="admin-card"><h3>达人提交记录</h3><div id="creatorSummary"></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-page hidden" data-view-panel="brand">
+          <div class="section-head">
+            <div>
+              <h2>商品池调整</h2>
+              <p>品牌方单独维护，用于调整价格、图片、产品等级和风格线</p>
+            </div>
+            <div class="admin-actions">
+              <button class="ghost-button hidden" id="brandRefreshButton">
+                <i data-lucide="refresh-cw"></i><span>刷新</span>
+              </button>
+              <button class="ghost-button hidden" id="brandLogoutButton">
+                <i data-lucide="log-out"></i><span>退出</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-login" id="brandLoginPanel">
+            <div>
+              <h3>品牌方管理登录</h3>
+              <p>进入后可修改商品卡片内容，达人端会自动同步</p>
+            </div>
+            <label><span>邮箱</span><input id="brandEmailInput" type="email" autocomplete="username" placeholder="管理员邮箱" /></label>
+            <label><span>密码</span><input id="brandPasswordInput" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
+            <button class="primary-button" id="brandLoginButton">
+              <i data-lucide="log-in"></i><span>登录商品池</span>
+            </button>
+          </div>
+
+          <div class="hidden" id="brandDashboard">
+            <div class="admin-card admin-editor-card">
+              <div class="editor-head">
+                <div>
+                  <h3>商品池调整</h3>
+                  <p>保存后达人端商品卡片会自动同步显示</p>
+                </div>
+                <label class="editor-search">
+                  <span>搜索商品</span>
+                  <input id="brandProductSearch" type="search" placeholder="搜索款号 / 品名" />
+                </label>
+              </div>
+              <div id="brandProductEditor"></div>
             </div>
           </div>
         </section>
