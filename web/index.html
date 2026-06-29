@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>茵曼达人智选台</title>
+    <link rel="preconnect" href="https://unpkg.com" />
+    <link rel="stylesheet" href="./styles.css?v=20260602-3" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">in</div>
+          <div>
+            <strong>inman° 茵曼</strong>
+            <span>直播合作分析</span>
+          </div>
+        </div>
+        <nav class="nav-list" aria-label="主导航">
+          <button class="nav-item active" data-view="overview"><i data-lucide="layout-dashboard"></i><span>经营概览</span></button>
+          <button class="nav-item" data-view="creators"><i data-lucide="users-round"></i><span>达人画像</span></button>
+          <button class="nav-item" data-view="products"><i data-lucide="shirt"></i><span>爆款数据库</span></button>
+          <button class="nav-item" data-view="match"><i data-lucide="sparkles"></i><span>智能匹配</span></button>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="sync-dot"></div>
+          <div>
+            <strong>数据自动同步中</strong>
+            <span>BI 商品库每 10 分钟刷新</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">达人合作运营工作台</p>
+            <h1 id="page-title">经营概览</h1>
+          </div>
+          <div class="topbar-actions">
+            <div class="data-freshness">
+              <i data-lucide="refresh-cw"></i>
+              <span id="data-time">正在读取最新数据</span>
+            </div>
+            <button class="icon-button" id="refresh-button" title="刷新数据"><i data-lucide="refresh-cw"></i></button>
+          </div>
+        </header>
+
+        <section class="view active" id="view-overview">
+          <div class="metrics-grid">
+            <article class="metric">
+              <span>合作达人样本</span>
+              <strong id="metric-creators">-</strong>
+              <small>近 30 天达人号，自动扩充样本</small>
+            </article>
+            <article class="metric">
+              <span>内部款式库</span>
+              <strong id="metric-products">-</strong>
+              <small>跨业务线按款号聚合</small>
+            </article>
+            <article class="metric">
+              <span>达人合作销售额</span>
+              <strong id="metric-creator-sales">-</strong>
+              <small>已抓取合作达人合计</small>
+            </article>
+            <article class="metric warning">
+              <span>高销售缺货款</span>
+              <strong id="metric-shortage">-</strong>
+              <small>爆款榜前 100 中可售库存偏低</small>
+            </article>
+          </div>
+
+          <div class="overview-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>合作达人销售贡献</h2>
+                  <p>已剔除茵曼自有渠道号及变体账号</p>
+                </div>
+                <button class="text-button" data-jump="creators">查看全部 <i data-lucide="arrow-right"></i></button>
+              </div>
+              <div id="creator-bars" class="bar-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>爆款品类结构</h2>
+                  <p>按商品销售额汇总 TOP100</p>
+                </div>
+                <button class="text-button" data-jump="products">查看榜单 <i data-lucide="arrow-right"></i></button>
+              </div>
+              <div id="category-list" class="category-list"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>实时爆款观察</h2>
+                <p>三条业务线聚合后按销售额降序</p>
+              </div>
+            </div>
+            <div class="product-strip" id="overview-products"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-creators">
+          <section class="panel table-panel">
+            <div class="panel-header toolbar">
+              <div>
+                <h2>合作达人画像</h2>
+                <p>BI 店群管理 · 商品分析近 30 天成交金额排序</p>
+              </div>
+              <label class="search-box">
+                <i data-lucide="search"></i>
+                <input id="creator-search" type="search" placeholder="搜索达人或抖音号" />
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>排名</th><th>达人</th><th>粉丝数</th><th>销售额</th><th>销量</th><th>品牌商品</th><th>客单价</th><th>直播</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="creator-table"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel creator-hot-panel">
+            <div class="panel-header">
+              <div>
+                <h2>达人近 14 天女装爆款</h2>
+                <p>千里眼达人销售 TOP50 · 服饰内衣 / 女装 / 全部</p>
+              </div>
+              <span class="source-badge">千里眼</span>
+            </div>
+            <div id="creator-hot-products" class="creator-hot-products"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-products">
+          <section class="panel table-panel">
+            <div class="panel-header toolbar products-toolbar">
+              <div>
+                <h2 class="products-title">BI 爆款数据库</h2>
+              </div>
+              <div class="toolbar-controls">
+                <label class="search-box">
+                  <i data-lucide="search"></i>
+                  <input id="product-search" type="search" placeholder="搜索款号或品类" />
+                </label>
+                <select id="category-filter" aria-label="筛选品类"><option value="">全部品类</option></select>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>排名</th><th>商品</th><th>款号</th><th>品类</th><th>标签</th><th>销售额</th><th>销量</th><th>可售库存</th><th>缺货数</th><th>业务线</th>
+                  </tr>
+                </thead>
+                <tbody id="product-table"></tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <button class="icon-button" id="prev-products" title="上一页"><i data-lucide="chevron-left"></i></button>
+              <span id="product-page">第 1 页</span>
+              <button class="icon-button" id="next-products" title="下一页"><i data-lucide="chevron-right"></i></button>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-match">
+          <section class="match-hero">
+            <div>
+              <p class="eyebrow">款式推荐</p>
+              <h2>达人与内部爆款智能匹配</h2>
+              <p>选择达人后，系统基于达人销售贡献、客单价和款式实时销售表现生成首批推荐。</p>
+            </div>
+            <label class="select-label">
+              <span>选择合作达人</span>
+              <select id="match-creator"></select>
+            </label>
+          </section>
+          <div class="match-layout">
+            <aside class="panel creator-profile" id="match-profile"></aside>
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>推荐款式</h2>
+                  <p>首版使用真实经营指标进行规则评分</p>
+                </div>
+              </div>
+              <div id="match-products" class="match-products"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="creator-dialog">
+      <div class="dialog-header">
+        <div><p class="eyebrow">达人画像</p><h2 id="dialog-name"></h2></div>
+        <button class="icon-button" id="close-dialog" title="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <div id="dialog-content"></div>
+    </dialog>
+    <dialog id="shortage-dialog">
+      <div class="dialog-header">
+        <div><p class="eyebrow">SKU 缺货分析</p><h2 id="shortage-dialog-name"></h2></div>
+        <button class="icon-button" id="close-shortage-dialog" title="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <div id="shortage-dialog-content"></div>
+    </dialog>
+    <dialog id="creator-hot-dialog" class="wide-dialog">
+      <div class="dialog-header">
+        <div><p class="eyebrow">千里眼达人销售</p><h2 id="creator-hot-dialog-name"></h2></div>
+        <button class="icon-button" id="close-creator-hot-dialog" title="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <div id="creator-hot-dialog-content"></div>
+    </dialog>
+
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="./app.js?v=20260602-7"></script>
+  </body>
+</html>
