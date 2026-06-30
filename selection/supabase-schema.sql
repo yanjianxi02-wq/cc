@@ -43,6 +43,28 @@ create table if not exists public.product_overrides (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.creator_access_requests (
+  id uuid primary key default gen_random_uuid(),
+  creator_name text not null check (char_length(creator_name) between 1 and 30),
+  email text not null,
+  password_hash text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  review_note text not null default '',
+  requested_at timestamptz not null default now(),
+  reviewed_at timestamptz,
+  reviewed_by text,
+  approved_user_id uuid
+);
+
+create table if not exists public.creator_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  creator_name text not null check (char_length(creator_name) between 1 and 30),
+  email text not null unique,
+  status text not null default 'active' check (status in ('active', 'disabled')),
+  approved_at timestamptz not null default now(),
+  approved_by text
+);
+
 alter table public.product_overrides
   add column if not exists price numeric,
   add column if not exists image_url text,
@@ -50,6 +72,24 @@ alter table public.product_overrides
   add column if not exists style text,
   add column if not exists updated_by text,
   add column if not exists updated_at timestamptz not null default now();
+
+alter table public.creator_access_requests
+  add column if not exists creator_name text,
+  add column if not exists email text,
+  add column if not exists password_hash text,
+  add column if not exists status text not null default 'pending',
+  add column if not exists review_note text not null default '',
+  add column if not exists requested_at timestamptz not null default now(),
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists reviewed_by text,
+  add column if not exists approved_user_id uuid;
+
+alter table public.creator_profiles
+  add column if not exists creator_name text,
+  add column if not exists email text,
+  add column if not exists status text not null default 'active',
+  add column if not exists approved_at timestamptz not null default now(),
+  add column if not exists approved_by text;
 
 create index if not exists selection_items_submission_id_idx
   on public.selection_items(submission_id);
@@ -59,10 +99,18 @@ create index if not exists submissions_submitted_at_idx
   on public.submissions(submitted_at desc);
 create index if not exists product_overrides_updated_at_idx
   on public.product_overrides(updated_at desc);
+create index if not exists creator_access_requests_requested_at_idx
+  on public.creator_access_requests(requested_at desc);
+create index if not exists creator_access_requests_email_idx
+  on public.creator_access_requests(lower(email));
+create index if not exists creator_profiles_email_idx
+  on public.creator_profiles(lower(email));
 
 alter table public.submissions enable row level security;
 alter table public.selection_items enable row level security;
 alter table public.product_overrides enable row level security;
+alter table public.creator_access_requests enable row level security;
+alter table public.creator_profiles enable row level security;
 
 drop policy if exists "authenticated can read submissions" on public.submissions;
 create policy "authenticated can read submissions"
@@ -84,6 +132,25 @@ create policy "admin can write product overrides"
   on public.product_overrides for all to authenticated
   using ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com')
   with check ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com');
+
+drop policy if exists "admin can read creator access requests" on public.creator_access_requests;
+create policy "admin can read creator access requests"
+  on public.creator_access_requests for select to authenticated
+  using ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com');
+
+drop policy if exists "admin can manage creator access requests" on public.creator_access_requests;
+create policy "admin can manage creator access requests"
+  on public.creator_access_requests for all to authenticated
+  using ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com')
+  with check ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com');
+
+drop policy if exists "admin can read creator profiles" on public.creator_profiles;
+create policy "admin can read creator profiles"
+  on public.creator_profiles for select to authenticated
+  using (
+    (auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com'
+    or auth.uid() = user_id
+  );
 
 create or replace function public.submit_selection(
   p_creator_name text,
@@ -138,6 +205,243 @@ $$;
 revoke all on function public.submit_selection(text, jsonb) from public;
 grant execute on function public.submit_selection(text, jsonb) to anon, authenticated;
 
+create or replace function public.request_creator_access(
+  p_creator_name text,
+  p_email text,
+  p_password text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_request_id uuid;
+  v_email text;
+begin
+  p_creator_name := btrim(p_creator_name);
+  v_email := lower(btrim(p_email));
+
+  if char_length(p_creator_name) < 1 or char_length(p_creator_name) > 30 then
+    raise exception 'invalid creator name';
+  end if;
+  if v_email = '' or position('@' in v_email) = 0 then
+    raise exception 'invalid email';
+  end if;
+  if char_length(p_password) < 8 then
+    raise exception 'password too short';
+  end if;
+
+  if exists (
+    select 1
+    from public.creator_profiles
+    where lower(email) = v_email
+  ) or exists (
+    select 1
+    from auth.users
+    where lower(email) = v_email
+  ) then
+    raise exception 'account already exists';
+  end if;
+
+  if exists (
+    select 1
+    from public.creator_access_requests
+    where lower(email) = v_email
+      and status = 'pending'
+  ) then
+    raise exception 'request already pending';
+  end if;
+
+  insert into public.creator_access_requests (
+    creator_name,
+    email,
+    password_hash
+  )
+  values (
+    p_creator_name,
+    v_email,
+    crypt(p_password, gen_salt('bf'))
+  )
+  returning id into v_request_id;
+
+  return v_request_id;
+end;
+$$;
+
+create or replace function public.approve_creator_access(
+  p_request_id uuid,
+  p_review_note text default ''
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_request public.creator_access_requests%rowtype;
+  v_user_id uuid;
+  v_admin_email text;
+begin
+  v_admin_email := auth.jwt() ->> 'email';
+  if v_admin_email <> 'yanjianxi02@gmail.com' then
+    raise exception 'forbidden';
+  end if;
+
+  select *
+  into v_request
+  from public.creator_access_requests
+  where id = p_request_id
+    and status = 'pending'
+  limit 1;
+
+  if v_request.id is null then
+    raise exception 'request not found';
+  end if;
+
+  if exists (
+    select 1
+    from auth.users
+    where lower(email) = lower(v_request.email)
+  ) or exists (
+    select 1
+    from public.creator_profiles
+    where lower(email) = lower(v_request.email)
+  ) then
+    raise exception 'account already exists';
+  end if;
+
+  v_user_id := gen_random_uuid();
+
+  insert into auth.users (
+    instance_id,
+    id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    created_at,
+    updated_at,
+    confirmation_token,
+    email_change,
+    email_change_token_new,
+    recovery_token
+  )
+  values (
+    '00000000-0000-0000-0000-000000000000',
+    v_user_id,
+    'authenticated',
+    'authenticated',
+    v_request.email,
+    v_request.password_hash,
+    now(),
+    '{"provider":"email","providers":["email"],"role":"creator"}'::jsonb,
+    jsonb_build_object('creator_name', v_request.creator_name, 'role', 'creator'),
+    now(),
+    now(),
+    '',
+    '',
+    '',
+    ''
+  );
+
+  insert into auth.identities (
+    id,
+    user_id,
+    provider_id,
+    identity_data,
+    provider,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  )
+  values (
+    gen_random_uuid(),
+    v_user_id,
+    v_request.email,
+    jsonb_build_object('sub', v_user_id::text, 'email', v_request.email),
+    'email',
+    now(),
+    now(),
+    now()
+  );
+
+  insert into public.creator_profiles (
+    user_id,
+    creator_name,
+    email,
+    status,
+    approved_at,
+    approved_by
+  )
+  values (
+    v_user_id,
+    v_request.creator_name,
+    v_request.email,
+    'active',
+    now(),
+    v_admin_email
+  );
+
+  update public.creator_access_requests
+  set status = 'approved',
+      review_note = coalesce(p_review_note, ''),
+      reviewed_at = now(),
+      reviewed_by = v_admin_email,
+      approved_user_id = v_user_id
+  where id = p_request_id;
+
+  return v_user_id;
+end;
+$$;
+
+create or replace function public.reject_creator_access(
+  p_request_id uuid,
+  p_review_note text default ''
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_request_id uuid;
+  v_admin_email text;
+begin
+  v_admin_email := auth.jwt() ->> 'email';
+  if v_admin_email <> 'yanjianxi02@gmail.com' then
+    raise exception 'forbidden';
+  end if;
+
+  update public.creator_access_requests
+  set status = 'rejected',
+      review_note = coalesce(p_review_note, ''),
+      reviewed_at = now(),
+      reviewed_by = v_admin_email
+  where id = p_request_id
+    and status = 'pending'
+  returning id into v_request_id;
+
+  if v_request_id is null then
+    raise exception 'request not found';
+  end if;
+
+  return v_request_id;
+end;
+$$;
+
+revoke all on function public.request_creator_access(text, text, text) from public;
+grant execute on function public.request_creator_access(text, text, text) to anon, authenticated;
+
+revoke all on function public.approve_creator_access(uuid, text) from public;
+grant execute on function public.approve_creator_access(uuid, text) to authenticated;
+
+revoke all on function public.reject_creator_access(uuid, text) from public;
+grant execute on function public.reject_creator_access(uuid, text) to authenticated;
+
 do $$
 begin
   if not exists (
@@ -160,5 +464,12 @@ begin
       and schemaname = 'public' and tablename = 'product_overrides'
   ) then
     alter publication supabase_realtime add table public.product_overrides;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public' and tablename = 'creator_access_requests'
+  ) then
+    alter publication supabase_realtime add table public.creator_access_requests;
   end if;
 end $$;

@@ -47,6 +47,12 @@ const state = {
   adminSavingSku: "",
   productOverrides: new Map(),
   productSummaryCollapsed: false,
+  creatorRequests: [],
+  currentSession: null,
+  currentUser: null,
+  currentRole: "guest",
+  creatorProfile: null,
+  authView: "creator",
   visibleLimit: 60,
   filters: {
     category: "全部",
@@ -57,6 +63,22 @@ const state = {
 };
 
 const els = {
+  authShell: document.getElementById("authShell"),
+  appShell: document.getElementById("appShell"),
+  creatorAuthTab: document.getElementById("creatorAuthTab"),
+  brandAuthTab: document.getElementById("brandAuthTab"),
+  creatorAuthPanel: document.getElementById("creatorAuthPanel"),
+  brandAuthPanel: document.getElementById("brandAuthPanel"),
+  creatorLoginEmailInput: document.getElementById("creatorLoginEmailInput"),
+  creatorLoginPasswordInput: document.getElementById("creatorLoginPasswordInput"),
+  creatorLoginButton: document.getElementById("creatorLoginButton"),
+  creatorRequestNameInput: document.getElementById("creatorRequestNameInput"),
+  creatorRequestEmailInput: document.getElementById("creatorRequestEmailInput"),
+  creatorRequestPasswordInput: document.getElementById("creatorRequestPasswordInput"),
+  creatorRequestButton: document.getElementById("creatorRequestButton"),
+  portalBrandEmailInput: document.getElementById("portalBrandEmailInput"),
+  portalBrandPasswordInput: document.getElementById("portalBrandPasswordInput"),
+  portalBrandLoginButton: document.getElementById("portalBrandLoginButton"),
   productGrid: document.getElementById("productGrid"),
   selectedCount: document.getElementById("selectedCount"),
   drawerCount: document.getElementById("drawerCount"),
@@ -71,6 +93,10 @@ const els = {
   searchInput: document.getElementById("searchInput"),
   creatorNameInput: document.getElementById("creatorNameInput"),
   toast: document.getElementById("toast"),
+  userPill: document.getElementById("userPill"),
+  userDisplayName: document.getElementById("userDisplayName"),
+  userDisplayRole: document.getElementById("userDisplayRole"),
+  globalLogoutButton: document.getElementById("globalLogoutButton"),
   modal: document.getElementById("detailModal"),
   detailContent: document.getElementById("detailContent"),
   submitStatus: document.getElementById("submitStatus"),
@@ -78,8 +104,10 @@ const els = {
   adminProductCount: document.getElementById("adminProductCount"),
   adminSelected: document.getElementById("adminSelected"),
   adminHotCategory: document.getElementById("adminHotCategory"),
+  pendingRequestCount: document.getElementById("pendingRequestCount"),
   productSummary: document.getElementById("productSummary"),
   creatorSummary: document.getElementById("creatorSummary"),
+  creatorRequestSummary: document.getElementById("creatorRequestSummary"),
   adminLoginPanel: document.getElementById("adminLoginPanel"),
   adminDashboard: document.getElementById("adminDashboard"),
   adminEmailInput: document.getElementById("adminEmailInput"),
@@ -192,6 +220,42 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(new Error("file-read-failed"));
     reader.readAsDataURL(file);
   });
+}
+
+function isAdminEmail(email) {
+  return String(email || "").toLowerCase() === "yanjianxi02@gmail.com";
+}
+
+function setAuthView(view) {
+  state.authView = view;
+  els.creatorAuthTab.classList.toggle("active", view === "creator");
+  els.brandAuthTab.classList.toggle("active", view === "brand");
+  els.creatorAuthPanel.classList.toggle("hidden", view !== "creator");
+  els.brandAuthPanel.classList.toggle("hidden", view !== "brand");
+}
+
+function navButtonsFor(view) {
+  return document.querySelectorAll(`.nav-item[data-view="${view}"]`);
+}
+
+function setRoleUi(role) {
+  state.currentRole = role;
+  const creatorOnly = role === "creator";
+  navButtonsFor("admin").forEach((button) => button.classList.toggle("hidden", creatorOnly));
+  navButtonsFor("brand").forEach((button) => button.classList.toggle("hidden", creatorOnly));
+  els.userPill.classList.toggle("hidden", role === "guest");
+  if (role === "creator") {
+    els.creatorNameInput.readOnly = true;
+    els.creatorNameInput.value = state.creatorProfile?.creator_name || "";
+  } else {
+    els.creatorNameInput.readOnly = false;
+    els.creatorNameInput.value = state.creatorName;
+  }
+}
+
+function setAppVisibility(loggedIn) {
+  els.authShell.classList.toggle("hidden", loggedIn);
+  els.appShell.classList.toggle("hidden", !loggedIn);
 }
 
 function priceBand(product) {
@@ -558,6 +622,8 @@ function renderAdmin() {
   els.adminProductCount.textContent = productPool.length;
   els.adminSubmitted.textContent = state.adminSubmissions.length;
   els.adminSelected.textContent = state.adminItems.length;
+  const pendingRequests = state.creatorRequests.filter((item) => item.status === "pending");
+  els.pendingRequestCount.textContent = `${pendingRequests.length} 待审核`;
 
   const categoryCounts = state.adminItems.reduce((acc, item) => {
     acc[item.category] = (acc[item.category] || 0) + 1;
@@ -617,6 +683,31 @@ function renderAdmin() {
         )
         .join("")
     : `<div class="empty">暂无达人提交记录</div>`;
+
+  els.creatorRequestSummary.innerHTML = state.creatorRequests.length
+    ? state.creatorRequests
+        .map(
+          (request) => `
+            <div class="summary-row request-row">
+              <div>
+                <strong>${escapeHtml(request.creator_name)}</strong>
+                <small>${escapeHtml(request.email)} · ${new Date(request.requested_at).toLocaleString("zh-CN")}</small>
+                ${request.review_note ? `<small>${escapeHtml(request.review_note)}</small>` : ""}
+              </div>
+              <div class="request-actions">
+                <span class="request-status status-${request.status}">${request.status === "pending" ? "待审核" : request.status === "approved" ? "已开通" : "已驳回"}</span>
+                ${request.status === "pending"
+                  ? `
+                    <button class="ghost-button" data-action="reject-request" data-id="${request.id}">驳回</button>
+                    <button class="primary-button" data-action="approve-request" data-id="${request.id}">确认开通</button>
+                  `
+                  : ""}
+              </div>
+            </div>
+          `
+        )
+        .join("")
+    : `<div class="empty">暂无达人开户申请</div>`;
 
   renderProductSummaryCollapse();
 }
@@ -791,6 +882,9 @@ function openImagePreview(id) {
 }
 
 function setView(view) {
+  if (state.currentRole === "creator" && (view === "admin" || view === "brand")) {
+    view = "selection";
+  }
   state.view = view;
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
@@ -803,7 +897,7 @@ function setView(view) {
   } else {
     document.querySelector(".content-grid").classList.remove("hidden");
   }
-  if (view === "admin" || view === "brand") syncAdminSession();
+  if (state.currentRole === "brand" && (view === "admin" || view === "brand")) syncAccessSession();
 }
 
 function selectionPayload() {
@@ -881,9 +975,10 @@ function setAdminLoggedIn(loggedIn) {
   refreshIcons();
 }
 
-async function syncAdminSession() {
+async function syncAccessSession() {
   if (!cloudEnabled) {
     setAdminLoggedIn(false);
+    setAppVisibility(false);
     els.adminLoginPanel.innerHTML = `
       <div class="empty">云端数据库尚未配置，请联系网站管理员。</div>
     `;
@@ -895,12 +990,67 @@ async function syncAdminSession() {
   const {
     data: { session },
   } = await cloud.auth.getSession();
-  setAdminLoggedIn(Boolean(session));
-  if (session) {
+  state.currentSession = session;
+  state.currentUser = session?.user || null;
+
+  if (!session) {
+    if (state.adminChannel) {
+      await cloud.removeChannel(state.adminChannel);
+      state.adminChannel = null;
+    }
+    state.creatorProfile = null;
+    state.creatorRequests = [];
+    setRoleUi("guest");
+    setAppVisibility(false);
+    setAdminLoggedIn(false);
+    return;
+  }
+
+  if (isAdminEmail(session.user.email)) {
+    state.creatorProfile = null;
+  setRoleUi("brand");
+  els.userDisplayName.textContent = "品牌方";
+  els.userDisplayRole.textContent = "后台管理";
+    setAppVisibility(true);
+    setAdminLoggedIn(true);
     await Promise.all([loadAdminData(), loadProductOverrides({ silent: true })]);
     subscribeAdminRealtime();
     renderBrandProductEditor();
+    return;
   }
+
+  const { data: profile, error } = await cloud
+    .from("creator_profiles")
+    .select("*")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+
+  if (error || !profile) {
+    if (state.adminChannel) {
+      await cloud.removeChannel(state.adminChannel);
+      state.adminChannel = null;
+    }
+    await cloud.auth.signOut();
+    showToast("账号尚未开通，请联系品牌方审核");
+    state.creatorProfile = null;
+    setRoleUi("guest");
+    setAppVisibility(false);
+    setAdminLoggedIn(false);
+    return;
+  }
+
+  state.creatorProfile = profile;
+  state.creatorName = profile.creator_name;
+  localStorage.setItem("inmanCreatorName", state.creatorName);
+  setRoleUi("creator");
+  els.userDisplayName.textContent = profile.creator_name;
+  els.userDisplayRole.textContent = "达人账号";
+  setAppVisibility(true);
+  setAdminLoggedIn(false);
+  await loadProductOverrides({ silent: true });
+  renderProducts();
+  renderSelected();
+  if (state.view === "admin" || state.view === "brand") setView("selection");
 }
 
 async function loginAdmin(source = "admin") {
@@ -908,9 +1058,24 @@ async function loginAdmin(source = "admin") {
     showToast("云端后台尚未完成配置");
     return;
   }
-  const emailInput = source === "brand" ? els.brandEmailInput : els.adminEmailInput;
-  const passwordInput = source === "brand" ? els.brandPasswordInput : els.adminPasswordInput;
-  const loginButton = source === "brand" ? els.brandLoginButton : els.adminLoginButton;
+  const emailInput =
+    source === "brand"
+      ? els.brandEmailInput
+      : source === "portal-brand"
+        ? els.portalBrandEmailInput
+        : els.adminEmailInput;
+  const passwordInput =
+    source === "brand"
+      ? els.brandPasswordInput
+      : source === "portal-brand"
+        ? els.portalBrandPasswordInput
+        : els.adminPasswordInput;
+  const loginButton =
+    source === "brand"
+      ? els.brandLoginButton
+      : source === "portal-brand"
+        ? els.portalBrandLoginButton
+        : els.adminLoginButton;
   const email = emailInput.value.trim();
   if (!email) {
     showToast("请输入管理员邮箱");
@@ -934,10 +1099,83 @@ async function loginAdmin(source = "admin") {
   }
   passwordInput.value = "";
   showToast("登录成功");
-  await syncAdminSession();
+  await syncAccessSession();
+  setView(source === "portal-brand" ? "admin" : state.view);
 }
 
-async function logoutAdmin() {
+async function loginCreator() {
+  if (!cloudEnabled) {
+    showToast("云端后台尚未完成配置");
+    return;
+  }
+  const email = els.creatorLoginEmailInput.value.trim();
+  const password = els.creatorLoginPasswordInput.value;
+  if (!email) {
+    showToast("请输入登录邮箱");
+    return;
+  }
+  if (!password) {
+    showToast("请输入登录密码");
+    return;
+  }
+  els.creatorLoginButton.disabled = true;
+  const { error } = await cloud.auth.signInWithPassword({ email, password });
+  els.creatorLoginButton.disabled = false;
+  if (error) {
+    showToast("账号未开通或密码错误");
+    return;
+  }
+  els.creatorLoginPasswordInput.value = "";
+  await syncAccessSession();
+  showToast("欢迎进入选款网站");
+  setView("selection");
+}
+
+async function requestCreatorAccess() {
+  if (!cloudEnabled) {
+    showToast("云端后台尚未完成配置");
+    return;
+  }
+  const creatorName = els.creatorRequestNameInput.value.trim();
+  const email = els.creatorRequestEmailInput.value.trim();
+  const password = els.creatorRequestPasswordInput.value;
+  if (!creatorName) {
+    showToast("请输入达人名称");
+    return;
+  }
+  if (!email) {
+    showToast("请输入注册邮箱");
+    return;
+  }
+  if (password.length < 8) {
+    showToast("密码至少8位");
+    return;
+  }
+  els.creatorRequestButton.disabled = true;
+  const { error } = await cloud.rpc("request_creator_access", {
+    p_creator_name: creatorName,
+    p_email: email,
+    p_password: password,
+  });
+  els.creatorRequestButton.disabled = false;
+  if (error) {
+    console.error(error);
+    const message =
+      error.message === "account already exists"
+        ? "该邮箱已开通过账号"
+        : error.message === "request already pending"
+          ? "该邮箱已提交申请，请等待审核"
+          : "提交申请失败";
+    showToast(message);
+    return;
+  }
+  els.creatorRequestNameInput.value = "";
+  els.creatorRequestEmailInput.value = "";
+  els.creatorRequestPasswordInput.value = "";
+  showToast("申请已提交，请等待品牌方审核");
+}
+
+async function logoutCurrentUser() {
   if (state.adminChannel) {
     await cloud.removeChannel(state.adminChannel);
     state.adminChannel = null;
@@ -945,14 +1183,21 @@ async function logoutAdmin() {
   await cloud.auth.signOut();
   state.adminSubmissions = [];
   state.adminItems = [];
+  state.creatorRequests = [];
   setAdminLoggedIn(false);
+  setRoleUi("guest");
+  setAppVisibility(false);
   renderAdmin();
   renderBrandProductEditor();
 }
 
 async function loadAdminData() {
   if (!cloudEnabled) return;
-  const [{ data: submissions, error: submissionsError }, { data: items, error: itemsError }] =
+  const [
+    { data: submissions, error: submissionsError },
+    { data: items, error: itemsError },
+    { data: requests, error: requestsError },
+  ] =
     await Promise.all([
       cloud
         .from("submissions")
@@ -960,15 +1205,21 @@ async function loadAdminData() {
         .order("submitted_at", { ascending: false })
         .limit(1000),
       cloud.from("selection_items").select("*").limit(10000),
+      cloud
+        .from("creator_access_requests")
+        .select("*")
+        .order("requested_at", { ascending: false })
+        .limit(200),
     ]);
 
-  if (submissionsError || itemsError) {
-    console.error(submissionsError || itemsError);
+  if (submissionsError || itemsError || requestsError) {
+    console.error(submissionsError || itemsError || requestsError);
     showToast("后台数据读取失败");
     return;
   }
   state.adminSubmissions = submissions || [];
   state.adminItems = items || [];
+  state.creatorRequests = requests || [];
   renderAdmin();
 }
 
@@ -1021,7 +1272,42 @@ function subscribeAdminRealtime() {
       { event: "*", schema: "public", table: "product_overrides" },
       () => loadProductOverrides({ silent: true })
     )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "creator_access_requests" },
+      loadAdminData
+    )
     .subscribe();
+}
+
+async function approveCreatorRequest(id) {
+  if (!cloudEnabled) return;
+  const { error } = await cloud.rpc("approve_creator_access", {
+    p_request_id: id,
+    p_review_note: "品牌方审核通过",
+  });
+  if (error) {
+    console.error(error);
+    showToast("开通失败");
+    return;
+  }
+  showToast("达人账号已开通");
+  await loadAdminData();
+}
+
+async function rejectCreatorRequest(id) {
+  if (!cloudEnabled) return;
+  const { error } = await cloud.rpc("reject_creator_access", {
+    p_request_id: id,
+    p_review_note: "品牌方暂未通过",
+  });
+  if (error) {
+    console.error(error);
+    showToast("驳回失败");
+    return;
+  }
+  showToast("已驳回该申请");
+  await loadAdminData();
 }
 
 async function collectOverrideDraft(sku) {
@@ -1187,6 +1473,8 @@ document.addEventListener("click", (event) => {
   if (action === "remove") toggleProduct(id);
   if (action === "save-override") saveProductOverride(id);
   if (action === "reset-override") resetProductOverride(id);
+  if (action === "approve-request") approveCreatorRequest(id);
+  if (action === "reject-request") rejectCreatorRequest(id);
   if (action === "load-more") {
     state.visibleLimit += 60;
     renderProducts();
@@ -1216,6 +1504,21 @@ document.addEventListener("input", (event) => {
 
 document.querySelectorAll(".nav-item").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
+});
+
+els.creatorAuthTab.addEventListener("click", () => setAuthView("creator"));
+els.brandAuthTab.addEventListener("click", () => setAuthView("brand"));
+els.creatorLoginButton.addEventListener("click", loginCreator);
+els.creatorLoginPasswordInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loginCreator();
+});
+els.creatorRequestButton.addEventListener("click", requestCreatorAccess);
+els.creatorRequestPasswordInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") requestCreatorAccess();
+});
+els.portalBrandLoginButton.addEventListener("click", () => loginAdmin("portal-brand"));
+els.portalBrandPasswordInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loginAdmin("portal-brand");
 });
 
 els.categoryFilter.addEventListener("change", (event) => {
@@ -1274,8 +1577,9 @@ els.brandLoginButton.addEventListener("click", () => loginAdmin("brand"));
 els.brandPasswordInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") loginAdmin("brand");
 });
-els.adminLogoutButton.addEventListener("click", logoutAdmin);
-els.brandLogoutButton.addEventListener("click", logoutAdmin);
+els.adminLogoutButton.addEventListener("click", logoutCurrentUser);
+els.brandLogoutButton.addEventListener("click", logoutCurrentUser);
+els.globalLogoutButton.addEventListener("click", logoutCurrentUser);
 els.adminRefreshButton.addEventListener("click", loadAdminData);
 els.brandRefreshButton.addEventListener("click", () => loadProductOverrides());
 els.adminExportButton.addEventListener("click", exportAdminCsv);
@@ -1293,10 +1597,16 @@ if (els.productSummaryToggle) {
 }
 
 initFilters();
-loadProductOverrides({ silent: true });
 renderProducts();
 renderSelected();
+setAuthView("creator");
 setView("selection");
+if (cloudEnabled) {
+  cloud.auth.onAuthStateChange(() => {
+    syncAccessSession();
+  });
+}
+syncAccessSession();
 refreshIcons();
 
 

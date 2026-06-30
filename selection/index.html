@@ -8,7 +8,85 @@
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
   </head>
   <body>
-    <div class="app-shell">
+    <section class="auth-shell" id="authShell">
+      <div class="auth-panel">
+        <div class="auth-hero">
+          <span class="brand-mark auth-mark">in</span>
+          <div>
+            <p class="eyebrow">2026 秋季新品</p>
+            <h1>达人选款网站登录</h1>
+            <p class="auth-copy">达人登录后进入选款，品牌方登录后进入后台审核与商品池调整。</p>
+          </div>
+        </div>
+        <div class="auth-switch">
+          <button class="chip-button active" id="creatorAuthTab" type="button">达人登录</button>
+          <button class="chip-button" id="brandAuthTab" type="button">品牌方登录</button>
+        </div>
+        <div class="auth-card" id="creatorAuthPanel">
+          <div class="auth-grid">
+            <div class="auth-block">
+              <div class="auth-block-head">
+                <h2>达人登录</h2>
+                <p>审核通过后，用注册邮箱和密码登录。</p>
+              </div>
+              <label>
+                <span>邮箱</span>
+                <input id="creatorLoginEmailInput" type="email" autocomplete="username" placeholder="请输入登录邮箱" />
+              </label>
+              <label>
+                <span>密码</span>
+                <input id="creatorLoginPasswordInput" type="password" autocomplete="current-password" placeholder="请输入登录密码" />
+              </label>
+              <button class="primary-button" id="creatorLoginButton" type="button">
+                <i data-lucide="log-in"></i><span>进入选款网站</span>
+              </button>
+            </div>
+            <div class="auth-block auth-divider">
+              <div class="auth-block-head">
+                <h2>新达人创建账号</h2>
+                <p>提交后会进入品牌方后台审核，审核通过后即可登录。</p>
+              </div>
+              <label>
+                <span>达人名称</span>
+                <input id="creatorRequestNameInput" type="text" maxlength="30" placeholder="请输入达人名称" />
+              </label>
+              <label>
+                <span>邮箱</span>
+                <input id="creatorRequestEmailInput" type="email" autocomplete="email" placeholder="请输入注册邮箱" />
+              </label>
+              <label>
+                <span>密码</span>
+                <input id="creatorRequestPasswordInput" type="password" autocomplete="new-password" placeholder="请设置登录密码" />
+              </label>
+              <button class="ghost-button" id="creatorRequestButton" type="button">
+                <i data-lucide="user-plus"></i><span>提交开通申请</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="auth-card hidden" id="brandAuthPanel">
+          <div class="auth-single">
+            <div class="auth-block-head">
+              <h2>品牌方登录</h2>
+              <p>登录后可审核新达人账号，并管理后台汇总与商品池。</p>
+            </div>
+            <label>
+              <span>邮箱</span>
+              <input id="portalBrandEmailInput" type="email" autocomplete="username" placeholder="请输入品牌方邮箱" />
+            </label>
+            <label>
+              <span>密码</span>
+              <input id="portalBrandPasswordInput" type="password" autocomplete="current-password" placeholder="请输入登录密码" />
+            </label>
+            <button class="primary-button" id="portalBrandLoginButton" type="button">
+              <i data-lucide="shield-check"></i><span>进入品牌方后台</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="app-shell hidden" id="appShell">
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-mark">in</span>
@@ -51,6 +129,15 @@
             <h1>达人选款工作台</h1>
           </div>
           <div class="top-actions">
+            <div class="user-pill hidden" id="userPill">
+              <div>
+                <strong id="userDisplayName">-</strong>
+                <small id="userDisplayRole">-</small>
+              </div>
+              <button class="icon-button" id="globalLogoutButton" type="button" aria-label="退出登录">
+                <i data-lucide="log-out"></i>
+              </button>
+            </div>
             <div class="sync-pill">
               <i data-lucide="refresh-cw"></i>
               <span>BI筛选：茵曼服装 / 2026秋季 / 线上 / 类目全部</span>
@@ -207,6 +294,16 @@
               <div><span>提交次数</span><strong id="adminSubmitted">0</strong></div>
               <div><span>累计选款</span><strong id="adminSelected">0</strong></div>
               <div><span>热门品类</span><strong id="adminHotCategory">-</strong></div>
+            </div>
+            <div class="admin-card request-card">
+              <div class="request-head">
+                <div>
+                  <h3>达人开通审核</h3>
+                  <p>新达人提交申请后，会在这里等待品牌方确认。</p>
+                </div>
+                <strong id="pendingRequestCount">0 待审核</strong>
+              </div>
+              <div id="creatorRequestSummary"></div>
             </div>
             <div class="admin-panels">
               <div class="admin-card" id="productSummaryCard">
