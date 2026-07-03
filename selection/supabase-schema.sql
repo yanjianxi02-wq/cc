@@ -39,6 +39,7 @@ create table if not exists public.product_overrides (
   image_url text,
   plan_level text,
   style text,
+  is_hidden boolean not null default false,
   updated_by text,
   updated_at timestamptz not null default now()
 );
@@ -70,6 +71,7 @@ alter table public.product_overrides
   add column if not exists image_url text,
   add column if not exists plan_level text,
   add column if not exists style text,
+  add column if not exists is_hidden boolean not null default false,
   add column if not exists updated_by text,
   add column if not exists updated_at timestamptz not null default now();
 

@@ -44,6 +44,14 @@ const state = {
   adminItems: [],
   adminChannel: null,
   brandProductSearch: "",
+  brandFilters: {
+    category: "全部",
+    level: "全部",
+    price: "全部",
+    visibility: "全部",
+    query: "",
+  },
+  brandSelectedSkus: new Set(),
   adminSavingSku: "",
   productOverrides: new Map(),
   productSummaryCollapsed: false,
@@ -91,6 +99,12 @@ const els = {
   levelFilter: document.getElementById("levelFilter"),
   priceFilter: document.getElementById("priceFilter"),
   searchInput: document.getElementById("searchInput"),
+  statusStrip: document.getElementById("statusStrip"),
+  brandFiltersPanel: document.getElementById("brandFiltersPanel"),
+  brandCategoryFilter: document.getElementById("brandCategoryFilter"),
+  brandLevelFilter: document.getElementById("brandLevelFilter"),
+  brandPriceFilter: document.getElementById("brandPriceFilter"),
+  brandVisibilityFilter: document.getElementById("brandVisibilityFilter"),
   creatorNameInput: document.getElementById("creatorNameInput"),
   toast: document.getElementById("toast"),
   userPill: document.getElementById("userPill"),
@@ -126,6 +140,10 @@ const els = {
   brandLoginButton: document.getElementById("brandLoginButton"),
   brandLogoutButton: document.getElementById("brandLogoutButton"),
   brandRefreshButton: document.getElementById("brandRefreshButton"),
+  brandSelectAll: document.getElementById("brandSelectAll"),
+  brandBatchSelectedCount: document.getElementById("brandBatchSelectedCount"),
+  brandBatchVisibility: document.getElementById("brandBatchVisibility"),
+  brandBatchApplyButton: document.getElementById("brandBatchApplyButton"),
   brandProductSearch: document.getElementById("brandProductSearch"),
   brandProductEditor: document.getElementById("brandProductEditor")
 };
@@ -146,13 +164,13 @@ function uniqueValues(key) {
 function initFilters() {
   uniqueValues("category").forEach((category) => {
     els.categoryFilter.append(new Option(category, category));
+    els.brandCategoryFilter?.append(new Option(category, category));
   });
 }
 
-function matchesPrice(product) {
+function matchesPrice(product, range) {
   if (product.price == null) return true;
   const price = product.price;
-  const range = state.filters.price;
   if (range === "全部") return true;
   if (range === "0-199") return price < 200;
   if (range === "200-299") return price >= 200 && price <= 299;
@@ -165,6 +183,7 @@ function filteredProducts() {
   const levelOrder = { S: 0, A: 1, B: 2, C: 3, "": 9 };
   return productPool
     .filter((product) => {
+      if (product.hidden) return false;
       const categoryMatch = state.filters.category === "全部" || product.category === state.filters.category;
       const levelMatch = state.filters.level === "全部" || product.level === state.filters.level;
       const queryMatch =
@@ -172,7 +191,7 @@ function filteredProducts() {
         product.name.toLowerCase().includes(query) ||
         product.sku.toLowerCase().includes(query) ||
         product.style.toLowerCase().includes(query);
-      return categoryMatch && levelMatch && matchesPrice(product) && queryMatch;
+      return categoryMatch && levelMatch && matchesPrice(product, state.filters.price) && queryMatch;
     })
     .sort((a, b) => {
       const byLevel = levelOrder[a.level] - levelOrder[b.level];
@@ -208,9 +227,20 @@ function applyProductOverrides() {
         img: override.image_url || product.img,
         level: override.plan_level || product.level,
         style: override.style || product.style,
+        hidden: Boolean(override.is_hidden),
       };
     })
   );
+}
+
+function pruneHiddenSelections() {
+  const hiddenIds = new Set(productPool.filter((product) => product.hidden).map((product) => product.id));
+  hiddenIds.forEach((id) => {
+    state.selected.delete(id);
+    state.featured.delete(id);
+    state.intents.delete(id);
+    state.remarks.delete(id);
+  });
 }
 
 function readFileAsDataUrl(file) {
@@ -723,20 +753,59 @@ function renderProductSummaryCollapse() {
   refreshIcons();
 }
 
+function visibilityText(product) {
+  return product.hidden ? "达人不可见" : "达人可见";
+}
+
+function renderBrandBatchState(visibleSkus = []) {
+  if (!visibleSkus.length) {
+    visibleSkus = [...document.querySelectorAll("[data-brand-select]")].map(
+      (checkbox) => checkbox.dataset.brandSelect
+    );
+  }
+  if (els.brandBatchSelectedCount) {
+    els.brandBatchSelectedCount.textContent = `已选 ${state.brandSelectedSkus.size} 款`;
+  }
+  if (els.brandBatchApplyButton) {
+    els.brandBatchApplyButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
+  }
+  if (els.brandSelectAll) {
+    const selectable = visibleSkus.length ? visibleSkus : [];
+    const selectedInView = selectable.filter((sku) => state.brandSelectedSkus.has(sku)).length;
+    els.brandSelectAll.checked = Boolean(selectable.length && selectedInView === selectable.length);
+    els.brandSelectAll.indeterminate = Boolean(selectedInView && selectedInView < selectable.length);
+  }
+}
+
 function renderBrandProductEditor() {
   if (!els.brandProductEditor) return;
-  const query = state.brandProductSearch.trim().toLowerCase();
+  const query = state.brandFilters.query.trim().toLowerCase();
   const list = productPool
     .filter((product) => {
-      if (!query) return true;
-      return (
+      const categoryMatch =
+        state.brandFilters.category === "全部" || product.category === state.brandFilters.category;
+      const levelMatch =
+        state.brandFilters.level === "全部" || product.level === state.brandFilters.level;
+      const visibilityMatch =
+        state.brandFilters.visibility === "全部" ||
+        (state.brandFilters.visibility === "visible" && !product.hidden) ||
+        (state.brandFilters.visibility === "hidden" && product.hidden);
+      const queryMatch =
+        !query ||
         product.name.toLowerCase().includes(query) ||
         product.sku.toLowerCase().includes(query) ||
-        product.style.toLowerCase().includes(query)
+        product.style.toLowerCase().includes(query);
+      return (
+        categoryMatch &&
+        levelMatch &&
+        visibilityMatch &&
+        matchesPrice(product, state.brandFilters.price) &&
+        queryMatch
       );
     })
     .slice(0, 40);
 
+  const visibleSkus = list.map((product) => product.sku);
   els.brandProductEditor.innerHTML = list.length
     ? list
         .map((product) => {
@@ -744,8 +813,12 @@ function renderBrandProductEditor() {
           const baseProduct = baseProductPool.find((item) => item.sku === product.sku) || product;
           const saving = state.adminSavingSku === product.sku;
           const hasOverrideImage = Boolean(override.image_url);
+          const checked = state.brandSelectedSkus.has(product.sku);
           return `
             <div class="editor-row">
+              <label class="editor-check">
+                <input type="checkbox" data-brand-select="${product.sku}" ${checked ? "checked" : ""} />
+              </label>
               <div class="editor-image">
                 <img src="${product.img}" alt="${product.name}" />
                 <button class="image-preview-button editor-preview-button" data-action="preview" data-id="${product.id}" aria-label="放大查看图片">
@@ -755,6 +828,7 @@ function renderBrandProductEditor() {
               <div class="editor-meta">
                 <strong>${product.name} <span class="sku">${product.sku}</span></strong>
                 <small>基准：${priceText(baseProduct)} · ${escapeHtml(baseProduct.style)} · ${escapeHtml(baseProduct.level || "未标注")}</small>
+                <span class="visibility-pill ${product.hidden ? "hidden-product" : ""}">${visibilityText(product)}</span>
               </div>
               <label>
                 <span>价格</span>
@@ -778,6 +852,13 @@ function renderBrandProductEditor() {
                 </select>
               </label>
               <label>
+                <span>达人可见</span>
+                <select data-override-sku="${product.sku}" data-override-field="is_hidden">
+                  <option value="false" ${!product.hidden ? "selected" : ""}>达人可见</option>
+                  <option value="true" ${product.hidden ? "selected" : ""}>达人不可见</option>
+                </select>
+              </label>
+              <label>
                 <span>风格线</span>
                 <input data-override-sku="${product.sku}" data-override-field="style" value="${escapeHtml(override.style || product.style || "")}" />
               </label>
@@ -790,6 +871,8 @@ function renderBrandProductEditor() {
         })
         .join("")
     : `<div class="empty">没有匹配到商品</div>`;
+  renderBrandBatchState(visibleSkus);
+  refreshIcons();
 }
 
 function toggleProduct(id) {
@@ -892,6 +975,9 @@ function setView(view) {
   document.querySelectorAll("[data-view-panel]").forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.viewPanel !== view);
   });
+  if (els.statusStrip) {
+    els.statusStrip.classList.toggle("hidden", view === "brand");
+  }
   if (view !== "selection") {
     document.querySelector(".content-grid").classList.add("hidden");
   } else {
@@ -1226,6 +1312,7 @@ async function loadAdminData() {
 async function loadProductOverrides(options = {}) {
   if (!cloudEnabled) {
     applyProductOverrides();
+    pruneHiddenSelections();
     renderProducts();
     renderSelected();
     return;
@@ -1244,10 +1331,12 @@ async function loadProductOverrides(options = {}) {
         image_url: item.image_url || "",
         plan_level: item.plan_level || "",
         style: item.style || "",
+        is_hidden: Boolean(item.is_hidden),
       },
     ])
   );
   applyProductOverrides();
+  pruneHiddenSelections();
   renderProducts();
   renderSelected();
   renderBrandProductEditor();
@@ -1340,6 +1429,7 @@ async function collectOverrideDraft(sku) {
     image_url: imageUrl,
     plan_level: draft.plan_level || null,
     style: draft.style || null,
+    is_hidden: draft.is_hidden === "true",
   };
 }
 
@@ -1382,6 +1472,50 @@ async function saveProductOverride(sku) {
     return;
   }
   showToast("商品配置已保存");
+  await loadProductOverrides({ silent: true });
+  renderAdmin();
+  renderBrandProductEditor();
+}
+
+async function applyBatchVisibility() {
+  if (!cloudEnabled) {
+    showToast("云端后台尚未完成配置");
+    return;
+  }
+  const skus = [...state.brandSelectedSkus];
+  if (!skus.length) {
+    showToast("请先勾选商品");
+    return;
+  }
+  const isHidden = els.brandBatchVisibility?.value === "hidden";
+  state.adminSavingSku = "batch";
+  renderBrandProductEditor();
+  const {
+    data: { user },
+  } = await cloud.auth.getUser();
+  const payload = skus.map((sku) => {
+    const override = state.productOverrides.get(sku) || {};
+    return {
+      sku,
+      price: override.price ?? null,
+      image_url: override.image_url || null,
+      plan_level: override.plan_level || null,
+      style: override.style || null,
+      is_hidden: isHidden,
+      updated_by: user?.email || "",
+      updated_at: new Date().toISOString(),
+    };
+  });
+  const { error } = await cloud.from("product_overrides").upsert(payload);
+  state.adminSavingSku = "";
+  if (error) {
+    console.error(error);
+    showToast("批量设置失败");
+    renderBrandProductEditor();
+    return;
+  }
+  state.brandSelectedSkus.clear();
+  showToast(isHidden ? "已设为达人不可见" : "已设为达人可见");
   await loadProductOverrides({ silent: true });
   renderAdmin();
   renderBrandProductEditor();
@@ -1484,6 +1618,16 @@ document.addEventListener("click", (event) => {
 document.addEventListener("change", (event) => {
   const intentId = event.target.dataset.intent;
   const remarkId = event.target.dataset.remark;
+  const brandSelectSku = event.target.dataset.brandSelect;
+  if (brandSelectSku) {
+    if (event.target.checked) {
+      state.brandSelectedSkus.add(brandSelectSku);
+    } else {
+      state.brandSelectedSkus.delete(brandSelectSku);
+    }
+    renderBrandBatchState();
+    return;
+  }
   if (intentId) state.intents.set(intentId, event.target.value);
   if (remarkId) {
     const nextValue = event.target.value.trim();
@@ -1583,11 +1727,52 @@ els.globalLogoutButton.addEventListener("click", logoutCurrentUser);
 els.adminRefreshButton.addEventListener("click", loadAdminData);
 els.brandRefreshButton.addEventListener("click", () => loadProductOverrides());
 els.adminExportButton.addEventListener("click", exportAdminCsv);
+if (els.brandCategoryFilter) {
+  els.brandCategoryFilter.addEventListener("change", (event) => {
+    state.brandFilters.category = event.target.value;
+    renderBrandProductEditor();
+  });
+}
+if (els.brandLevelFilter) {
+  els.brandLevelFilter.addEventListener("change", (event) => {
+    state.brandFilters.level = event.target.value;
+    renderBrandProductEditor();
+  });
+}
+if (els.brandPriceFilter) {
+  els.brandPriceFilter.addEventListener("change", (event) => {
+    state.brandFilters.price = event.target.value;
+    renderBrandProductEditor();
+  });
+}
+if (els.brandVisibilityFilter) {
+  els.brandVisibilityFilter.addEventListener("change", (event) => {
+    state.brandFilters.visibility = event.target.value;
+    renderBrandProductEditor();
+  });
+}
 if (els.brandProductSearch) {
   els.brandProductSearch.addEventListener("input", (event) => {
     state.brandProductSearch = event.target.value;
+    state.brandFilters.query = event.target.value;
     renderBrandProductEditor();
   });
+}
+if (els.brandSelectAll) {
+  els.brandSelectAll.addEventListener("change", (event) => {
+    document.querySelectorAll("[data-brand-select]").forEach((checkbox) => {
+      checkbox.checked = event.target.checked;
+      if (event.target.checked) {
+        state.brandSelectedSkus.add(checkbox.dataset.brandSelect);
+      } else {
+        state.brandSelectedSkus.delete(checkbox.dataset.brandSelect);
+      }
+    });
+    renderBrandBatchState();
+  });
+}
+if (els.brandBatchApplyButton) {
+  els.brandBatchApplyButton.addEventListener("click", applyBatchVisibility);
 }
 if (els.productSummaryToggle) {
   els.productSummaryToggle.addEventListener("click", () => {

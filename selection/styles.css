@@ -1167,13 +1167,53 @@ textarea:focus {
   min-width: 260px;
 }
 
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf8;
+}
+
+.batch-select-all {
+  width: auto;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+}
+
+.batch-select-all input {
+  width: 16px;
+  height: 16px;
+}
+
+.batch-toolbar select {
+  min-width: 180px;
+}
+
 .editor-row {
   display: grid;
-  grid-template-columns: 72px minmax(160px, 1.1fr) 110px minmax(220px, 1.3fr) 110px minmax(170px, 1fr) auto;
+  grid-template-columns: 28px 72px minmax(150px, 1fr) 100px minmax(190px, 1.2fr) 100px 120px minmax(150px, 1fr) auto;
   gap: 12px;
   align-items: center;
   padding: 12px 0;
   border-top: 1px solid var(--line);
+}
+
+.editor-check {
+  width: 28px;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor-check input {
+  width: 18px;
+  height: 18px;
 }
 
 .editor-row:first-child {
@@ -1211,6 +1251,21 @@ textarea:focus {
 .editor-meta small {
   color: var(--muted);
   line-height: 1.45;
+}
+
+.visibility-pill {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e5f4ee;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.visibility-pill.hidden-product {
+  background: #fff1e8;
+  color: #b45309;
 }
 
 .field-hint {

@@ -15,19 +15,21 @@
           <div>
             <p class="eyebrow">2026 秋季新品</p>
             <h1>达人选款网站登录</h1>
-            <p class="auth-copy">达人登录后进入选款，品牌方登录后进入后台审核与商品池调整。</p>
+            <p class="auth-copy">达人登录后进入选款，品牌方登录后进入后台审核与货品管理。</p>
           </div>
         </div>
+
         <div class="auth-switch">
           <button class="chip-button active" id="creatorAuthTab" type="button">达人登录</button>
           <button class="chip-button" id="brandAuthTab" type="button">品牌方登录</button>
         </div>
+
         <div class="auth-card" id="creatorAuthPanel">
           <div class="auth-grid">
             <div class="auth-block">
               <div class="auth-block-head">
                 <h2>达人登录</h2>
-                <p>审核通过后，用注册邮箱和密码登录。</p>
+                <p>账号审核通过后，使用注册邮箱和密码登录。</p>
               </div>
               <label>
                 <span>邮箱</span>
@@ -41,6 +43,7 @@
                 <i data-lucide="log-in"></i><span>进入选款网站</span>
               </button>
             </div>
+
             <div class="auth-block auth-divider">
               <div class="auth-block-head">
                 <h2>新达人创建账号</h2>
@@ -64,11 +67,12 @@
             </div>
           </div>
         </div>
+
         <div class="auth-card hidden" id="brandAuthPanel">
           <div class="auth-single">
             <div class="auth-block-head">
               <h2>品牌方登录</h2>
-              <p>登录后可审核新达人账号，并管理后台汇总与商品池。</p>
+              <p>登录后可审核新达人账号，并管理后台汇总与货品池。</p>
             </div>
             <label>
               <span>邮箱</span>
@@ -142,18 +146,18 @@
               <i data-lucide="refresh-cw"></i>
               <span>BI筛选：茵曼服装 / 2026秋季 / 线上 / 类目全部</span>
             </div>
-            <button class="ghost-button" id="exportButton">
+            <button class="ghost-button" id="exportButton" type="button">
               <i data-lucide="download"></i>
               <span>导出</span>
             </button>
-            <button class="primary-button" id="submitTopButton">
+            <button class="primary-button" id="submitTopButton" type="button">
               <i data-lucide="send"></i>
               <span>提交选款</span>
             </button>
           </div>
         </header>
 
-        <section class="status-strip">
+        <section class="status-strip" id="statusStrip">
           <label class="creator-field">
             <span>达人</span>
             <input
@@ -175,6 +179,55 @@
           <div>
             <span>提交状态</span>
             <strong id="submitStatus">选款中</strong>
+          </div>
+        </section>
+
+        <section class="filters hidden" data-view-panel="brand" id="brandFiltersPanel">
+          <div class="section-head compact-head">
+            <div>
+              <h2>货品筛选</h2>
+              <p>按类目、等级、价格和款号快速筛选货品池</p>
+            </div>
+          </div>
+          <div class="filter-row">
+            <label>
+              <span>类目</span>
+              <select id="brandCategoryFilter">
+                <option value="全部">全部类目</option>
+              </select>
+            </label>
+            <label>
+              <span>等级</span>
+              <select id="brandLevelFilter">
+                <option value="全部">全部等级</option>
+                <option value="S">S级</option>
+                <option value="A">A级</option>
+                <option value="B">B级</option>
+                <option value="C">C级</option>
+              </select>
+            </label>
+            <label>
+              <span>价格</span>
+              <select id="brandPriceFilter">
+                <option value="全部">全部价格</option>
+                <option value="0-199">199以下</option>
+                <option value="200-299">200-299</option>
+                <option value="300-399">300-399</option>
+                <option value="400+">400以上</option>
+              </select>
+            </label>
+            <label>
+              <span>达人可见</span>
+              <select id="brandVisibilityFilter">
+                <option value="全部">全部状态</option>
+                <option value="visible">达人可见</option>
+                <option value="hidden">达人不可见</option>
+              </select>
+            </label>
+            <label class="search-field">
+              <span>款号</span>
+              <input id="brandProductSearch" type="search" placeholder="搜索款号 / 品名" />
+            </label>
           </div>
         </section>
 
@@ -200,10 +253,10 @@
               <span>价格带</span>
               <select id="priceFilter">
                 <option value="全部">全部价格</option>
-                <option value="0-199">199 以下</option>
+                <option value="0-199">199以下</option>
                 <option value="200-299">200-299</option>
                 <option value="300-399">300-399</option>
-                <option value="400+">400 以上</option>
+                <option value="400+">400以上</option>
               </select>
             </label>
             <label class="search-field">
@@ -217,7 +270,7 @@
           <section class="product-area" data-view-panel="selection">
             <div class="section-head">
               <div>
-              <h2>商品池</h2>
+                <h2>商品池</h2>
                 <p>来自 BI 商品上新，筛选口径：品类=茵曼服装，年份=2026，季节=秋季，渠道=线上，类目=全部，款号/订货会为空，首次上新未勾选</p>
               </div>
               <span id="resultCount">0 款</span>
@@ -234,7 +287,7 @@
               <span id="drawerCount">0</span>
             </div>
             <div class="selected-list compact" id="selectedDrawer"></div>
-            <button class="primary-button full" id="submitDrawerButton">
+            <button class="primary-button full" id="submitDrawerButton" type="button">
               <i data-lucide="send"></i>
               <span>提交选款</span>
             </button>
@@ -248,7 +301,7 @@
               <h2>已选商品确认</h2>
               <p>填写意向后提交给后台</p>
             </div>
-            <button class="primary-button" id="submitListButton">
+            <button class="primary-button" id="submitListButton" type="button">
               <i data-lucide="send"></i>
               <span>提交选款</span>
             </button>
@@ -264,13 +317,13 @@
               <p>登录后查看达人实时提交结果</p>
             </div>
             <div class="admin-actions">
-              <button class="ghost-button hidden" id="adminRefreshButton">
+              <button class="ghost-button hidden" id="adminRefreshButton" type="button">
                 <i data-lucide="refresh-cw"></i><span>刷新</span>
               </button>
-              <button class="ghost-button hidden" id="adminExportButton">
+              <button class="ghost-button hidden" id="adminExportButton" type="button">
                 <i data-lucide="file-spreadsheet"></i><span>导出明细</span>
               </button>
-              <button class="ghost-button hidden" id="adminLogoutButton">
+              <button class="ghost-button hidden" id="adminLogoutButton" type="button">
                 <i data-lucide="log-out"></i><span>退出</span>
               </button>
             </div>
@@ -281,9 +334,15 @@
               <h3>管理后台登录</h3>
               <p>仅品牌方管理员可查看全部达人提交记录</p>
             </div>
-            <label><span>邮箱</span><input id="adminEmailInput" type="email" autocomplete="username" placeholder="管理员邮箱" /></label>
-            <label><span>密码</span><input id="adminPasswordInput" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
-            <button class="primary-button" id="adminLoginButton">
+            <label>
+              <span>邮箱</span>
+              <input id="adminEmailInput" type="email" autocomplete="username" placeholder="管理员邮箱" />
+            </label>
+            <label>
+              <span>密码</span>
+              <input id="adminPasswordInput" type="password" autocomplete="current-password" placeholder="请输入密码" />
+            </label>
+            <button class="primary-button" id="adminLoginButton" type="button">
               <i data-lucide="log-in"></i><span>登录后台</span>
             </button>
           </div>
@@ -295,6 +354,7 @@
               <div><span>累计选款</span><strong id="adminSelected">0</strong></div>
               <div><span>热门品类</span><strong id="adminHotCategory">-</strong></div>
             </div>
+
             <div class="admin-card request-card">
               <div class="request-head">
                 <div>
@@ -305,9 +365,10 @@
               </div>
               <div id="creatorRequestSummary"></div>
             </div>
+
             <div class="admin-panels">
               <div class="admin-card" id="productSummaryCard">
-                <button class="collapse-toggle" id="productSummaryToggle">
+                <button class="collapse-toggle" id="productSummaryToggle" type="button">
                   <span>商品热度汇总</span>
                   <i data-lucide="chevron-up"></i>
                 </button>
@@ -315,7 +376,10 @@
                   <div id="productSummary"></div>
                 </div>
               </div>
-              <div class="admin-card"><h3>达人提交记录</h3><div id="creatorSummary"></div></div>
+              <div class="admin-card">
+                <h3>达人提交记录</h3>
+                <div id="creatorSummary"></div>
+              </div>
             </div>
           </div>
         </section>
@@ -327,10 +391,10 @@
               <p>品牌方单独维护，用于调整价格、图片、产品等级和风格线</p>
             </div>
             <div class="admin-actions">
-              <button class="ghost-button hidden" id="brandRefreshButton">
+              <button class="ghost-button hidden" id="brandRefreshButton" type="button">
                 <i data-lucide="refresh-cw"></i><span>刷新</span>
               </button>
-              <button class="ghost-button hidden" id="brandLogoutButton">
+              <button class="ghost-button hidden" id="brandLogoutButton" type="button">
                 <i data-lucide="log-out"></i><span>退出</span>
               </button>
             </div>
@@ -339,11 +403,17 @@
           <div class="admin-login" id="brandLoginPanel">
             <div>
               <h3>品牌方管理登录</h3>
-              <p>进入后可修改商品卡片内容，达人端会自动同步</p>
+              <p>进入后可修改商品卡片内容，达人端会自动同步。</p>
             </div>
-            <label><span>邮箱</span><input id="brandEmailInput" type="email" autocomplete="username" placeholder="管理员邮箱" /></label>
-            <label><span>密码</span><input id="brandPasswordInput" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
-            <button class="primary-button" id="brandLoginButton">
+            <label>
+              <span>邮箱</span>
+              <input id="brandEmailInput" type="email" autocomplete="username" placeholder="管理员邮箱" />
+            </label>
+            <label>
+              <span>密码</span>
+              <input id="brandPasswordInput" type="password" autocomplete="current-password" placeholder="请输入密码" />
+            </label>
+            <button class="primary-button" id="brandLoginButton" type="button">
               <i data-lucide="log-in"></i><span>登录商品池</span>
             </button>
           </div>
@@ -355,10 +425,20 @@
                   <h3>商品池调整</h3>
                   <p>保存后达人端商品卡片会自动同步显示</p>
                 </div>
-                <label class="editor-search">
-                  <span>搜索商品</span>
-                  <input id="brandProductSearch" type="search" placeholder="搜索款号 / 品名" />
+              </div>
+              <div class="batch-toolbar">
+                <label class="batch-select-all">
+                  <input id="brandSelectAll" type="checkbox" />
+                  <span>本页全选</span>
                 </label>
+                <span id="brandBatchSelectedCount">已选 0 款</span>
+                <select id="brandBatchVisibility">
+                  <option value="visible">批量设为达人可见</option>
+                  <option value="hidden">批量设为达人不可见</option>
+                </select>
+                <button class="primary-button" id="brandBatchApplyButton" type="button">
+                  <i data-lucide="check-check"></i><span>应用</span>
+                </button>
               </div>
               <div id="brandProductEditor"></div>
             </div>
@@ -369,7 +449,7 @@
 
     <div class="modal hidden" id="detailModal">
       <div class="modal-panel">
-        <button class="icon-button modal-close" id="closeModal" aria-label="关闭">
+        <button class="icon-button modal-close" id="closeModal" type="button" aria-label="关闭">
           <i data-lucide="x"></i>
         </button>
         <div id="detailContent"></div>
@@ -377,6 +457,7 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./supabase-config.js"></script>
     <script src="./products-data.js"></script>
