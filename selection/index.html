@@ -385,7 +385,7 @@
         </section>
 
         <section class="admin-page hidden" data-view-panel="brand">
-          <div class="section-head">
+          <div class="section-head hidden">
             <div>
               <h2>商品池调整</h2>
               <p>品牌方单独维护，用于调整价格、图片、产品等级和风格线</p>
@@ -439,6 +439,13 @@
                 <button class="primary-button" id="brandBatchApplyButton" type="button">
                   <i data-lucide="check-check"></i><span>应用</span>
                 </button>
+                <label class="import-file">
+                  <input id="brandImportFile" type="file" accept=".xlsx,.xls,.csv" />
+                  <span>导入表格</span>
+                </label>
+                <button class="ghost-button" id="brandImportButton" type="button">
+                  <i data-lucide="file-up"></i><span>批量修改</span>
+                </button>
               </div>
               <div id="brandProductEditor"></div>
             </div>
@@ -459,6 +466,7 @@
     <div class="toast hidden" id="toast"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="./supabase-config.js"></script>
     <script src="./products-data.js"></script>
     <script src="./app.js"></script>
