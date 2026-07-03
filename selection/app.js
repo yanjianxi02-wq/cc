@@ -144,6 +144,8 @@ const els = {
   brandBatchSelectedCount: document.getElementById("brandBatchSelectedCount"),
   brandBatchVisibility: document.getElementById("brandBatchVisibility"),
   brandBatchApplyButton: document.getElementById("brandBatchApplyButton"),
+  brandImportFile: document.getElementById("brandImportFile"),
+  brandImportButton: document.getElementById("brandImportButton"),
   brandProductSearch: document.getElementById("brandProductSearch"),
   brandProductEditor: document.getElementById("brandProductEditor")
 };
@@ -1521,6 +1523,144 @@ async function applyBatchVisibility() {
   renderBrandProductEditor();
 }
 
+function normalizeImportKey(key) {
+  return String(key || "").trim().replace(/\s+/g, "").toLowerCase();
+}
+
+function pickImportValue(row, keys) {
+  for (const key of Object.keys(row)) {
+    if (keys.includes(normalizeImportKey(key))) {
+      const value = row[key];
+      if (value !== null && value !== undefined && String(value).trim() !== "") return value;
+    }
+  }
+  return "";
+}
+
+function parseImportVisibility(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return null;
+  if (text.includes("不可") || text.includes("隐藏") || text === "hidden" || text === "hide" || text === "0" || text === "false" || text === "no") {
+    return true;
+  }
+  if (text.includes("可见") || text.includes("显示") || text === "visible" || text === "show" || text === "1" || text === "true" || text === "yes") {
+    return false;
+  }
+  return null;
+}
+
+function parseImportLevel(value) {
+  const level = String(value || "").trim().toUpperCase().replace("级", "");
+  return ["S", "A", "B", "C"].includes(level) ? level : null;
+}
+
+function readImportRows(file) {
+  return new Promise((resolve, reject) => {
+    if (!window.XLSX) {
+      reject(new Error("xlsx-not-loaded"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const workbook = window.XLSX.read(reader.result, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        const rows = window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], {
+          defval: "",
+        });
+        resolve(rows);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = () => reject(new Error("file-read-failed"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function buildImportPayload(rows, userEmail) {
+  const payload = [];
+  const missingSkus = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    const sku = String(
+      pickImportValue(row, ["款号", "货号", "sku", "商品款号", "商品编码", "编码"])
+    ).trim();
+    if (!sku || seen.has(sku)) return;
+    seen.add(sku);
+    const product = productPool.find((item) => item.sku === sku);
+    if (!product) {
+      missingSkus.push(sku);
+      return;
+    }
+    const override = state.productOverrides.get(sku) || {};
+    const priceRaw = pickImportValue(row, ["价格", "达播价", "售价", "price"]);
+    const price = priceRaw === "" ? override.price ?? null : Number(priceRaw);
+    if (Number.isNaN(price)) return;
+    const level = parseImportLevel(
+      pickImportValue(row, ["产品等级", "等级", "品牌计划等级", "planlevel", "level"])
+    );
+    const visibility = parseImportVisibility(
+      pickImportValue(row, ["达人可见", "是否可见", "可见", "状态", "visibility"])
+    );
+    const style = String(pickImportValue(row, ["风格线", "风格", "style"])).trim();
+    const imageUrl = String(pickImportValue(row, ["图片链接", "图片", "image", "imageurl"])).trim();
+
+    payload.push({
+      sku,
+      price,
+      image_url: imageUrl || override.image_url || null,
+      plan_level: level ?? override.plan_level ?? null,
+      style: style || override.style || null,
+      is_hidden: visibility ?? Boolean(override.is_hidden),
+      updated_by: userEmail || "",
+      updated_at: new Date().toISOString(),
+    });
+  });
+  return { payload, missingSkus };
+}
+
+async function importProductOverrides() {
+  if (!cloudEnabled) {
+    showToast("云端后台尚未完成配置");
+    return;
+  }
+  const file = els.brandImportFile?.files?.[0];
+  if (!file) {
+    showToast("请先选择表格");
+    return;
+  }
+  els.brandImportButton.disabled = true;
+  showToast("正在读取表格...");
+  try {
+    const rows = await readImportRows(file);
+    const {
+      data: { user },
+    } = await cloud.auth.getUser();
+    const { payload, missingSkus } = buildImportPayload(rows, user?.email || "");
+    if (!payload.length) {
+      showToast("表格里没有匹配到可修改款号");
+      return;
+    }
+    const { error } = await cloud.from("product_overrides").upsert(payload);
+    if (error) {
+      console.error(error);
+      showToast("导入保存失败");
+      return;
+    }
+    els.brandImportFile.value = "";
+    showToast(`已导入修改 ${payload.length} 款${missingSkus.length ? `，${missingSkus.length} 款未匹配` : ""}`);
+    await loadProductOverrides({ silent: true });
+    renderAdmin();
+    renderBrandProductEditor();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message === "xlsx-not-loaded" ? "表格解析组件加载失败" : "表格读取失败");
+  } finally {
+    els.brandImportButton.disabled = false;
+  }
+}
+
 async function resetProductOverride(sku) {
   if (!cloudEnabled) {
     showToast("云端后台尚未完成配置");
@@ -1773,6 +1913,9 @@ if (els.brandSelectAll) {
 }
 if (els.brandBatchApplyButton) {
   els.brandBatchApplyButton.addEventListener("click", applyBatchVisibility);
+}
+if (els.brandImportButton) {
+  els.brandImportButton.addEventListener("click", importProductOverrides);
 }
 if (els.productSummaryToggle) {
   els.productSummaryToggle.addEventListener("click", () => {
