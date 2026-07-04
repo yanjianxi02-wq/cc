@@ -419,6 +419,25 @@
           </div>
 
           <div class="hidden" id="brandDashboard">
+            <div class="admin-card catalog-update-card">
+              <div class="editor-head">
+                <div>
+                  <h3>更新新品</h3>
+                  <p>导入 BI 商品上新表，按款号新增或更新云端商品池。</p>
+                </div>
+                <div class="catalog-update-actions">
+                  <label class="import-file">
+                    <input id="brandNewProductsFile" type="file" accept=".xlsx,.xls,.csv" />
+                    <span>选择新品表</span>
+                  </label>
+                  <button class="primary-button" id="brandNewProductsButton" type="button">
+                    <i data-lucide="upload-cloud"></i><span>更新新品</span>
+                  </button>
+                </div>
+              </div>
+              <div class="catalog-update-note" id="brandCatalogMeta">当前商品池 825 款</div>
+            </div>
+
             <div class="admin-card admin-editor-card">
               <div class="editor-head">
                 <div>

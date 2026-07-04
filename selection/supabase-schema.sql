@@ -44,6 +44,24 @@ create table if not exists public.product_overrides (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.product_catalog (
+  sku text primary key,
+  id text,
+  product_name text not null,
+  category text not null,
+  onsale_date date,
+  style text,
+  price numeric,
+  image_url text,
+  plan_level text,
+  tag text not null default 'BI商品上新',
+  points jsonb not null default '[]'::jsonb,
+  source text not null default 'BI商品上新',
+  is_active boolean not null default true,
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.creator_access_requests (
   id uuid primary key default gen_random_uuid(),
   creator_name text not null check (char_length(creator_name) between 1 and 30),
@@ -75,6 +93,22 @@ alter table public.product_overrides
   add column if not exists updated_by text,
   add column if not exists updated_at timestamptz not null default now();
 
+alter table public.product_catalog
+  add column if not exists id text,
+  add column if not exists product_name text,
+  add column if not exists category text,
+  add column if not exists onsale_date date,
+  add column if not exists style text,
+  add column if not exists price numeric,
+  add column if not exists image_url text,
+  add column if not exists plan_level text,
+  add column if not exists tag text not null default 'BI商品上新',
+  add column if not exists points jsonb not null default '[]'::jsonb,
+  add column if not exists source text not null default 'BI商品上新',
+  add column if not exists is_active boolean not null default true,
+  add column if not exists updated_by text,
+  add column if not exists updated_at timestamptz not null default now();
+
 alter table public.creator_access_requests
   add column if not exists creator_name text,
   add column if not exists email text,
@@ -101,6 +135,10 @@ create index if not exists submissions_submitted_at_idx
   on public.submissions(submitted_at desc);
 create index if not exists product_overrides_updated_at_idx
   on public.product_overrides(updated_at desc);
+create index if not exists product_catalog_updated_at_idx
+  on public.product_catalog(updated_at desc);
+create index if not exists product_catalog_active_idx
+  on public.product_catalog(is_active);
 create index if not exists creator_access_requests_requested_at_idx
   on public.creator_access_requests(requested_at desc);
 create index if not exists creator_access_requests_email_idx
@@ -111,6 +149,7 @@ create index if not exists creator_profiles_email_idx
 alter table public.submissions enable row level security;
 alter table public.selection_items enable row level security;
 alter table public.product_overrides enable row level security;
+alter table public.product_catalog enable row level security;
 alter table public.creator_access_requests enable row level security;
 alter table public.creator_profiles enable row level security;
 
@@ -132,6 +171,20 @@ create policy "anyone can read product overrides"
 drop policy if exists "admin can write product overrides" on public.product_overrides;
 create policy "admin can write product overrides"
   on public.product_overrides for all to authenticated
+  using ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com')
+  with check ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com');
+
+drop policy if exists "anyone can read active product catalog" on public.product_catalog;
+create policy "anyone can read active product catalog"
+  on public.product_catalog for select to anon, authenticated
+  using (
+    is_active = true
+    or (auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com'
+  );
+
+drop policy if exists "admin can write product catalog" on public.product_catalog;
+create policy "admin can write product catalog"
+  on public.product_catalog for all to authenticated
   using ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com')
   with check ((auth.jwt() ->> 'email') = 'yanjianxi02@gmail.com');
 
@@ -466,6 +519,13 @@ begin
       and schemaname = 'public' and tablename = 'product_overrides'
   ) then
     alter publication supabase_realtime add table public.product_overrides;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public' and tablename = 'product_catalog'
+  ) then
+    alter publication supabase_realtime add table public.product_catalog;
   end if;
   if not exists (
     select 1 from pg_publication_tables

@@ -54,6 +54,7 @@ const state = {
   brandSelectedSkus: new Set(),
   adminSavingSku: "",
   productOverrides: new Map(),
+  catalogSource: window.BI_PRODUCTS?.length ? "local-bi" : "fallback",
   productSummaryCollapsed: false,
   creatorRequests: [],
   currentSession: null,
@@ -144,6 +145,9 @@ const els = {
   brandBatchSelectedCount: document.getElementById("brandBatchSelectedCount"),
   brandBatchVisibility: document.getElementById("brandBatchVisibility"),
   brandBatchApplyButton: document.getElementById("brandBatchApplyButton"),
+  brandNewProductsFile: document.getElementById("brandNewProductsFile"),
+  brandNewProductsButton: document.getElementById("brandNewProductsButton"),
+  brandCatalogMeta: document.getElementById("brandCatalogMeta"),
   brandImportFile: document.getElementById("brandImportFile"),
   brandImportButton: document.getElementById("brandImportButton"),
   brandProductSearch: document.getElementById("brandProductSearch"),
@@ -160,14 +164,57 @@ function escapeHtml(value) {
 }
 
 function uniqueValues(key) {
-  return [...new Set(productPool.map((product) => product[key]))];
+  return [...new Set(productPool.map((product) => product[key]).filter(Boolean))];
 }
 
 function initFilters() {
-  uniqueValues("category").forEach((category) => {
+  const categories = uniqueValues("category").sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (els.categoryFilter) {
+    els.categoryFilter.innerHTML = "";
+    els.categoryFilter.append(new Option("全部品类", "全部"));
+  }
+  if (els.brandCategoryFilter) {
+    els.brandCategoryFilter.innerHTML = "";
+    els.brandCategoryFilter.append(new Option("全部类目", "全部"));
+  }
+  categories.forEach((category) => {
     els.categoryFilter.append(new Option(category, category));
     els.brandCategoryFilter?.append(new Option(category, category));
   });
+  if (!categories.includes(state.filters.category)) state.filters.category = "全部";
+  if (!categories.includes(state.brandFilters.category)) state.brandFilters.category = "全部";
+  if (els.categoryFilter) els.categoryFilter.value = state.filters.category;
+  if (els.brandCategoryFilter) els.brandCategoryFilter.value = state.brandFilters.category;
+}
+
+function renderCatalogMeta() {
+  if (!els.brandCatalogMeta) return;
+  const visibleCount = productPool.filter((product) => !product.hidden).length;
+  const hiddenCount = productPool.length - visibleCount;
+  const sourceText = state.catalogSource === "cloud" ? "云端商品池" : "本地BI商品池";
+  els.brandCatalogMeta.textContent = `当前${sourceText} ${productPool.length} 款，达人可见 ${visibleCount} 款${hiddenCount ? `，不可见 ${hiddenCount} 款` : ""}`;
+}
+
+function refreshProductViews() {
+  applyProductOverrides();
+  pruneHiddenSelections();
+  initFilters();
+  renderProducts();
+  renderSelected();
+  renderAdmin();
+  renderBrandProductEditor();
+  renderCatalogMeta();
+}
+
+function replaceBaseProductPool(nextProducts, source = "cloud") {
+  baseProductPool.splice(
+    0,
+    baseProductPool.length,
+    ...nextProducts.map((product) => ({ ...product }))
+  );
+  state.catalogSource = source;
+  state.brandSelectedSkus.clear();
+  refreshProductViews();
 }
 
 function matchesPrice(product, range) {
@@ -236,12 +283,14 @@ function applyProductOverrides() {
 }
 
 function pruneHiddenSelections() {
-  const hiddenIds = new Set(productPool.filter((product) => product.hidden).map((product) => product.id));
-  hiddenIds.forEach((id) => {
-    state.selected.delete(id);
-    state.featured.delete(id);
-    state.intents.delete(id);
-    state.remarks.delete(id);
+  const availableIds = new Set(productPool.filter((product) => !product.hidden).map((product) => product.id));
+  [...state.selected.keys()].forEach((id) => {
+    if (!availableIds.has(id)) {
+      state.selected.delete(id);
+      state.featured.delete(id);
+      state.intents.delete(id);
+      state.remarks.delete(id);
+    }
   });
 }
 
@@ -1096,11 +1145,12 @@ async function syncAccessSession() {
 
   if (isAdminEmail(session.user.email)) {
     state.creatorProfile = null;
-  setRoleUi("brand");
-  els.userDisplayName.textContent = "品牌方";
-  els.userDisplayRole.textContent = "后台管理";
+    setRoleUi("brand");
+    els.userDisplayName.textContent = "品牌方";
+    els.userDisplayRole.textContent = "后台管理";
     setAppVisibility(true);
     setAdminLoggedIn(true);
+    await loadProductCatalog({ silent: true });
     await Promise.all([loadAdminData(), loadProductOverrides({ silent: true })]);
     subscribeAdminRealtime();
     renderBrandProductEditor();
@@ -1135,6 +1185,7 @@ async function syncAccessSession() {
   els.userDisplayRole.textContent = "达人账号";
   setAppVisibility(true);
   setAdminLoggedIn(false);
+  await loadProductCatalog({ silent: true });
   await loadProductOverrides({ silent: true });
   renderProducts();
   renderSelected();
@@ -1311,6 +1362,87 @@ async function loadAdminData() {
   renderAdmin();
 }
 
+function normalizeCatalogDate(value) {
+  if (value == null || value === "") return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+    return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+  }
+  const text = String(value).trim();
+  const normalized = text.replace(/[./]/g, "-");
+  const matched = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!matched) return text;
+  const [, year, month, day] = matched;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function normalizePriceValue(value) {
+  if (value == null || value === "") return null;
+  const price = Number(String(value).replace(/[￥,\s]/g, ""));
+  return Number.isFinite(price) ? price : null;
+}
+
+function productFromCatalogRow(row) {
+  const sku = String(row.sku || "").trim();
+  const existing = productPool.find((product) => product.sku === sku) || baseProductPool.find((product) => product.sku === sku);
+  const style = String(row.style || existing?.style || "").trim();
+  const category = String(row.category || existing?.category || "未分类").trim();
+  const points = Array.isArray(row.points) && row.points.length
+    ? row.points
+    : [
+        "来自 BI 商品上新",
+        "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部",
+        style ? `风格线：${style}` : `类目：${category}`,
+      ];
+  return {
+    id: String(row.id || sku).trim(),
+    sku,
+    name: String(row.product_name || existing?.name || category || sku).trim(),
+    category,
+    date: normalizeCatalogDate(row.onsale_date || existing?.date),
+    style,
+    price: normalizePriceValue(row.price ?? existing?.price),
+    level: parseImportLevel(row.plan_level || existing?.level) || String(row.plan_level || existing?.level || "").trim(),
+    tag: String(row.tag || existing?.tag || "BI商品上新").trim(),
+    img: String(row.image_url || existing?.img || `./assets/bi-current/${sku}.png`).trim(),
+    points,
+  };
+}
+
+async function loadProductCatalog(options = {}) {
+  if (!cloudEnabled) {
+    renderCatalogMeta();
+    return;
+  }
+  const { data, error } = await cloud
+    .from("product_catalog")
+    .select("*")
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(5000);
+  if (error) {
+    console.error(error);
+    if (!options.silent) showToast("云端新品池读取失败，将继续使用本地商品池");
+    renderCatalogMeta();
+    return;
+  }
+  const rows = data || [];
+  if (!rows.length) {
+    state.catalogSource = "local-bi";
+    refreshProductViews();
+    return;
+  }
+  const products = rows.map(productFromCatalogRow).filter((product) => product.sku);
+  if (!products.length) {
+    renderCatalogMeta();
+    return;
+  }
+  replaceBaseProductPool(products, "cloud");
+}
+
 async function loadProductOverrides(options = {}) {
   if (!cloudEnabled) {
     applyProductOverrides();
@@ -1342,6 +1474,7 @@ async function loadProductOverrides(options = {}) {
   renderProducts();
   renderSelected();
   renderBrandProductEditor();
+  renderCatalogMeta();
 }
 
 function subscribeAdminRealtime() {
@@ -1362,6 +1495,14 @@ function subscribeAdminRealtime() {
       "postgres_changes",
       { event: "*", schema: "public", table: "product_overrides" },
       () => loadProductOverrides({ silent: true })
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "product_catalog" },
+      async () => {
+        await loadProductCatalog({ silent: true });
+        await loadProductOverrides({ silent: true });
+      }
     )
     .on(
       "postgres_changes",
@@ -1620,6 +1761,121 @@ function buildImportPayload(rows, userEmail) {
   return { payload, missingSkus };
 }
 
+function buildCatalogImportPayload(rows, userEmail) {
+  const payload = [];
+  const skipped = [];
+  const seen = new Set();
+  rows.forEach((row, index) => {
+    const sku = String(
+      pickImportValue(row, ["款号", "货号", "sku", "商品款号", "商品编码", "编码", "款式编码"])
+    ).trim();
+    if (!sku) {
+      skipped.push(index + 2);
+      return;
+    }
+    if (seen.has(sku)) return;
+    seen.add(sku);
+    const existing = productPool.find((item) => item.sku === sku) || baseProductPool.find((item) => item.sku === sku);
+    const category = String(
+      pickImportValue(row, ["品类", "类目", "所属类目", "商品品类", "category"]) ||
+        existing?.category ||
+        "未分类"
+    ).trim();
+    const productName = String(
+      pickImportValue(row, ["品名", "商品名称", "名称", "商品名", "name", "productname"]) ||
+        existing?.name ||
+        category ||
+        sku
+    ).trim();
+    const style = String(
+      pickImportValue(row, ["风格线", "风格", "style"]) || existing?.style || ""
+    ).trim();
+    const priceRaw = pickImportValue(row, ["达播价", "价格", "售价", "price"]);
+    const importedPrice = normalizePriceValue(priceRaw);
+    const level =
+      parseImportLevel(
+        pickImportValue(row, ["产品等级", "等级", "品牌计划等级", "planlevel", "level"])
+      ) ||
+      existing?.level ||
+      "";
+    const imageUrl = String(
+      pickImportValue(row, ["图片链接", "主图", "图片", "image", "imageurl", "img"]) ||
+        existing?.img ||
+        ""
+    ).trim();
+    const onsaleDate = normalizeCatalogDate(
+      pickImportValue(row, ["上新日期", "日期", "波段日期", "上市日期", "date", "onsaledate"]) ||
+        existing?.date ||
+        ""
+    );
+    const tag = String(pickImportValue(row, ["标签", "tag"]) || existing?.tag || "BI商品上新").trim();
+    payload.push({
+      sku,
+      id: sku,
+      product_name: productName,
+      category,
+      onsale_date: onsaleDate || null,
+      style: style || null,
+      price: importedPrice ?? existing?.price ?? null,
+      image_url: imageUrl || null,
+      plan_level: level || null,
+      tag,
+      points: [
+        "来自 BI 商品上新",
+        "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部",
+        style ? `风格线：${style}` : `类目：${category}`,
+      ],
+      source: "BI 商品上新",
+      is_active: true,
+      updated_by: userEmail || "",
+      updated_at: new Date().toISOString(),
+    });
+  });
+  return { payload, skipped };
+}
+
+async function importNewProducts() {
+  if (!cloudEnabled) {
+    showToast("云端后台尚未完成配置");
+    return;
+  }
+  const file = els.brandNewProductsFile?.files?.[0];
+  if (!file) {
+    showToast("请先选择新品表");
+    return;
+  }
+  els.brandNewProductsButton.disabled = true;
+  showToast("正在更新新品池...");
+  try {
+    const rows = await readImportRows(file);
+    const {
+      data: { user },
+    } = await cloud.auth.getUser();
+    const { payload, skipped } = buildCatalogImportPayload(rows, user?.email || "");
+    if (!payload.length) {
+      showToast("表格里没有可更新的款号");
+      return;
+    }
+    const { error } = await cloud.from("product_catalog").upsert(payload);
+    if (error) {
+      console.error(error);
+      showToast("新品更新失败，请先确认云端商品池表已创建");
+      return;
+    }
+    els.brandNewProductsFile.value = "";
+    showToast(`已更新新品 ${payload.length} 款${skipped.length ? `，${skipped.length} 行缺少款号` : ""}`);
+    await loadProductCatalog({ silent: true });
+    await loadProductOverrides({ silent: true });
+    renderAdmin();
+    renderBrandProductEditor();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message === "xlsx-not-loaded" ? "表格解析组件加载失败" : "新品表读取失败");
+  } finally {
+    els.brandNewProductsButton.disabled = false;
+  }
+}
+
 async function importProductOverrides() {
   if (!cloudEnabled) {
     showToast("云端后台尚未完成配置");
@@ -1865,7 +2121,10 @@ els.adminLogoutButton.addEventListener("click", logoutCurrentUser);
 els.brandLogoutButton.addEventListener("click", logoutCurrentUser);
 els.globalLogoutButton.addEventListener("click", logoutCurrentUser);
 els.adminRefreshButton.addEventListener("click", loadAdminData);
-els.brandRefreshButton.addEventListener("click", () => loadProductOverrides());
+els.brandRefreshButton.addEventListener("click", async () => {
+  await loadProductCatalog();
+  await loadProductOverrides();
+});
 els.adminExportButton.addEventListener("click", exportAdminCsv);
 if (els.brandCategoryFilter) {
   els.brandCategoryFilter.addEventListener("change", (event) => {
@@ -1917,6 +2176,9 @@ if (els.brandBatchApplyButton) {
 if (els.brandImportButton) {
   els.brandImportButton.addEventListener("click", importProductOverrides);
 }
+if (els.brandNewProductsButton) {
+  els.brandNewProductsButton.addEventListener("click", importNewProducts);
+}
 if (els.productSummaryToggle) {
   els.productSummaryToggle.addEventListener("click", () => {
     state.productSummaryCollapsed = !state.productSummaryCollapsed;
@@ -1927,6 +2189,7 @@ if (els.productSummaryToggle) {
 initFilters();
 renderProducts();
 renderSelected();
+renderCatalogMeta();
 setAuthView("creator");
 setView("selection");
 if (cloudEnabled) {
