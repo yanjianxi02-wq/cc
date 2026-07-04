@@ -1146,6 +1146,26 @@ textarea:focus {
   margin-top: 14px;
 }
 
+.catalog-update-card {
+  margin-top: 14px;
+}
+
+.catalog-update-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.catalog-update-note {
+  color: var(--muted);
+  font-weight: 800;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf8;
+}
+
 .editor-head {
   display: flex;
   align-items: end;
