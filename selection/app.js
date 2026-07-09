@@ -48,6 +48,8 @@ const state = {
     category: "全部",
     level: "全部",
     price: "全部",
+    season: "全部",
+    stock: "全部",
     visibility: "全部",
     query: "",
   },
@@ -67,6 +69,8 @@ const state = {
     category: "全部",
     level: "全部",
     price: "全部",
+    season: "全部",
+    stock: "全部",
     query: ""
   }
 };
@@ -99,12 +103,16 @@ const els = {
   categoryFilter: document.getElementById("categoryFilter"),
   levelFilter: document.getElementById("levelFilter"),
   priceFilter: document.getElementById("priceFilter"),
+  seasonFilter: document.getElementById("seasonFilter"),
+  stockFilter: document.getElementById("stockFilter"),
   searchInput: document.getElementById("searchInput"),
   statusStrip: document.getElementById("statusStrip"),
   brandFiltersPanel: document.getElementById("brandFiltersPanel"),
   brandCategoryFilter: document.getElementById("brandCategoryFilter"),
   brandLevelFilter: document.getElementById("brandLevelFilter"),
   brandPriceFilter: document.getElementById("brandPriceFilter"),
+  brandSeasonFilter: document.getElementById("brandSeasonFilter"),
+  brandStockFilter: document.getElementById("brandStockFilter"),
   brandVisibilityFilter: document.getElementById("brandVisibilityFilter"),
   creatorNameInput: document.getElementById("creatorNameInput"),
   toast: document.getElementById("toast"),
@@ -218,13 +226,45 @@ function replaceBaseProductPool(nextProducts, source = "cloud") {
 }
 
 function matchesPrice(product, range) {
-  if (product.price == null) return true;
-  const price = product.price;
   if (range === "全部") return true;
-  if (range === "0-199") return price < 200;
-  if (range === "200-299") return price >= 200 && price <= 299;
-  if (range === "300-399") return price >= 300 && price <= 399;
-  return price >= 400;
+  if (product.price == null) return false;
+  const price = product.price;
+  if (range === "1-50") return price >= 1 && price < 50;
+  if (range === "50-100") return price >= 50 && price < 100;
+  if (range === "100-300") return price >= 100 && price < 300;
+  if (range === "300-500") return price >= 300 && price < 500;
+  if (range === "500-1000") return price >= 500 && price <= 1000;
+  return price > 1000;
+}
+
+function normalizeSeason(value) {
+  const text = String(value || "").trim();
+  if (!text) return "秋";
+  if (text.includes("春")) return "春";
+  if (text.includes("夏")) return "夏";
+  if (text.includes("秋")) return "秋";
+  if (text.includes("冬")) return "冬";
+  return text;
+}
+
+function normalizeStock(value) {
+  if (value == null || value === "") return null;
+  const stock = Number(String(value).replace(/[,\s件]/g, ""));
+  return Number.isFinite(stock) ? stock : null;
+}
+
+function matchesSeason(product, season) {
+  if (season === "全部") return true;
+  return normalizeSeason(product.season) === season;
+}
+
+function matchesStock(product, range) {
+  if (range === "全部") return true;
+  const stock = normalizeStock(product.stock);
+  if (stock == null) return false;
+  if (range === "0-100") return stock < 100;
+  if (range === "100-500") return stock >= 100 && stock <= 500;
+  return stock > 500;
 }
 
 function filteredProducts() {
@@ -240,7 +280,14 @@ function filteredProducts() {
         product.name.toLowerCase().includes(query) ||
         product.sku.toLowerCase().includes(query) ||
         product.style.toLowerCase().includes(query);
-      return categoryMatch && levelMatch && matchesPrice(product, state.filters.price) && queryMatch;
+      return (
+        categoryMatch &&
+        levelMatch &&
+        matchesPrice(product, state.filters.price) &&
+        matchesSeason(product, state.filters.season) &&
+        matchesStock(product, state.filters.stock) &&
+        queryMatch
+      );
     })
     .sort((a, b) => {
       const byLevel = levelOrder[a.level] - levelOrder[b.level];
@@ -841,6 +888,8 @@ function renderBrandProductEditor() {
         state.brandFilters.visibility === "全部" ||
         (state.brandFilters.visibility === "visible" && !product.hidden) ||
         (state.brandFilters.visibility === "hidden" && product.hidden);
+      const seasonMatch = matchesSeason(product, state.brandFilters.season);
+      const stockMatch = matchesStock(product, state.brandFilters.stock);
       const queryMatch =
         !query ||
         product.name.toLowerCase().includes(query) ||
@@ -851,6 +900,8 @@ function renderBrandProductEditor() {
         levelMatch &&
         visibilityMatch &&
         matchesPrice(product, state.brandFilters.price) &&
+        seasonMatch &&
+        stockMatch &&
         queryMatch
       );
     })
@@ -1406,6 +1457,8 @@ function productFromCatalogRow(row) {
     style,
     price: normalizePriceValue(row.price ?? existing?.price),
     level: parseImportLevel(row.plan_level || existing?.level) || String(row.plan_level || existing?.level || "").trim(),
+    season: normalizeSeason(row.season || existing?.season),
+    stock: normalizeStock(row.stock ?? existing?.stock),
     tag: String(row.tag || existing?.tag || "BI商品上新").trim(),
     img: String(row.image_url || existing?.img || `./assets/bi-current/${sku}.png`).trim(),
     points,
@@ -1808,6 +1861,12 @@ function buildCatalogImportPayload(rows, userEmail) {
         existing?.date ||
         ""
     );
+    const season = normalizeSeason(
+      pickImportValue(row, ["季节", "季", "season"]) || existing?.season
+    );
+    const stock = normalizeStock(
+      pickImportValue(row, ["库存", "可用库存", "现货库存", "stock", "inventory"]) || existing?.stock
+    );
     const tag = String(pickImportValue(row, ["标签", "tag"]) || existing?.tag || "BI商品上新").trim();
     payload.push({
       sku,
@@ -1819,6 +1878,8 @@ function buildCatalogImportPayload(rows, userEmail) {
       price: importedPrice ?? existing?.price ?? null,
       image_url: imageUrl || null,
       plan_level: level || null,
+      season,
+      stock,
       tag,
       points: [
         "来自 BI 商品上新",
@@ -2079,6 +2140,22 @@ els.priceFilter.addEventListener("change", (event) => {
   renderProducts();
 });
 
+if (els.seasonFilter) {
+  els.seasonFilter.addEventListener("change", (event) => {
+    state.filters.season = event.target.value;
+    state.visibleLimit = 60;
+    renderProducts();
+  });
+}
+
+if (els.stockFilter) {
+  els.stockFilter.addEventListener("change", (event) => {
+    state.filters.stock = event.target.value;
+    state.visibleLimit = 60;
+    renderProducts();
+  });
+}
+
 els.searchInput.addEventListener("input", (event) => {
   state.filters.query = event.target.value;
   state.visibleLimit = 60;
@@ -2141,6 +2218,18 @@ if (els.brandLevelFilter) {
 if (els.brandPriceFilter) {
   els.brandPriceFilter.addEventListener("change", (event) => {
     state.brandFilters.price = event.target.value;
+    renderBrandProductEditor();
+  });
+}
+if (els.brandSeasonFilter) {
+  els.brandSeasonFilter.addEventListener("change", (event) => {
+    state.brandFilters.season = event.target.value;
+    renderBrandProductEditor();
+  });
+}
+if (els.brandStockFilter) {
+  els.brandStockFilter.addEventListener("change", (event) => {
+    state.brandFilters.stock = event.target.value;
     renderBrandProductEditor();
   });
 }
