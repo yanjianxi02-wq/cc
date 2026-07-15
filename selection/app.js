@@ -275,13 +275,10 @@ function productSortPriority(product, override = state.productOverrides.get(prod
 }
 
 function compareCreatorProductOrder(a, b) {
-  const levelOrder = { S: 0, A: 1, B: 2, C: 3, "": 9 };
   const priorityA = normalizeCreatorSortPriority(a.creator_sort_priority) ?? Number.MAX_SAFE_INTEGER;
   const priorityB = normalizeCreatorSortPriority(b.creator_sort_priority) ?? Number.MAX_SAFE_INTEGER;
   const byPriority = priorityA - priorityB;
   if (byPriority !== 0) return byPriority;
-  const byLevel = (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9);
-  if (byLevel !== 0) return byLevel;
   const stockA = normalizeStock(a.stock) ?? -1;
   const stockB = normalizeStock(b.stock) ?? -1;
   const byStock = stockB - stockA;
@@ -952,7 +949,7 @@ function renderBrandFrontQueue() {
           `
         )
         .join("")
-    : `<div class="front-queue-empty">暂未设置前排推荐，达人端将按等级、库存和上新日期自动排序。</div>`;
+    : `<div class="front-queue-empty">暂未设置前排推荐，达人端将按库存和上新日期自动排序。</div>`;
 
   const preview = getCreatorDisplayOrder().slice(0, 20);
   els.brandFrontPreview.classList.toggle("hidden", !state.brandFrontPreviewVisible);
