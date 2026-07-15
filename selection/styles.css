@@ -1403,7 +1403,7 @@ textarea:focus {
 
 .editor-row {
   display: grid;
-  grid-template-columns: 28px 72px minmax(150px, 0.9fr) 92px minmax(170px, 1.15fr) 92px 116px minmax(130px, 0.8fr) auto;
+  grid-template-columns: 28px 72px minmax(150px, 0.9fr) 92px 92px minmax(170px, 1.1fr) minmax(130px, 0.9fr) 92px 116px minmax(130px, 0.8fr) auto;
   gap: 12px;
   align-items: center;
   padding: 12px 0;
@@ -1683,6 +1683,12 @@ textarea:focus {
 
 .hidden {
   display: none !important;
+}
+
+@media (max-width: 1450px) {
+  .editor-row {
+    grid-template-columns: 72px 1fr;
+  }
 }
 
 @media (max-width: 1100px) {
