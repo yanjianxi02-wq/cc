@@ -631,15 +631,15 @@ function renderProducts() {
               <span class="date">${product.date}</span>
             </div>
             <div class="card-actions">
-              <button class="mini-button select" data-action="toggle" data-id="${product.id}">
+              <button class="mini-button select" data-action="toggle" data-id="${product.id}" title="${selected ? "取消选款" : "选择商品"}" aria-label="${selected ? "取消选款" : "选择商品"}">
                 <i data-lucide="${selected ? "check" : "plus"}"></i>
                 <span>${selected ? "取消" : "选款"}</span>
               </button>
-              <button class="mini-button feature ${featured ? "active" : ""}" data-action="feature" data-id="${product.id}">
+              <button class="mini-button feature ${featured ? "active" : ""}" data-action="feature" data-id="${product.id}" title="设为重点款" aria-label="设为重点款">
                 <i data-lucide="star"></i>
                 <span>重点款</span>
               </button>
-              <button class="mini-button" data-action="detail" data-id="${product.id}">
+              <button class="mini-button" data-action="detail" data-id="${product.id}" title="查看详情" aria-label="查看详情">
                 <i data-lucide="panel-right-open"></i>
                 <span>详情</span>
               </button>

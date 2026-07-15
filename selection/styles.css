@@ -479,8 +479,8 @@ textarea:focus {
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(214px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 10px;
 }
 
 .load-more-button {
@@ -526,7 +526,7 @@ textarea:focus {
 }
 
 .image-wrap {
-  aspect-ratio: 3 / 3.55;
+  aspect-ratio: 3 / 3.35;
   background: #eceae6;
   position: relative;
   overflow: hidden;
@@ -541,9 +541,9 @@ textarea:focus {
 
 .tag-row {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  right: 10px;
+  top: 6px;
+  left: 6px;
+  right: 6px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -553,12 +553,13 @@ textarea:focus {
 .tag,
 .level {
   border-radius: 999px;
-  padding: 5px 8px;
-  font-size: 12px;
+  padding: 4px 6px;
+  font-size: 11px;
   font-weight: 800;
 }
 
 .tag {
+  display: none;
   color: var(--green-dark);
   background: rgba(232, 244, 238, 0.92);
 }
@@ -578,14 +579,14 @@ textarea:focus {
 
 .selected-badge {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: 6px;
+  bottom: 6px;
   display: none;
   color: #fff;
   background: var(--green);
   border-radius: 999px;
-  padding: 7px 10px;
-  font-size: 13px;
+  padding: 5px 7px;
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -599,10 +600,10 @@ textarea:focus {
 
 .image-preview-button {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
-  width: 34px;
-  height: 34px;
+  left: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: 999px;
   color: #fff;
@@ -616,32 +617,36 @@ textarea:focus {
 }
 
 .product-body {
-  padding: 12px;
+  padding: 8px;
   display: grid;
-  gap: 9px;
+  gap: 6px;
 }
 
 .product-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
+  display: block;
+  min-width: 0;
 }
 
 .product-title h3 {
-  font-size: 16px;
-  line-height: 1.35;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sku {
+  display: block;
+  overflow: hidden;
   color: var(--blue);
+  font-size: 12px;
   font-weight: 800;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .product-meta {
-  font-size: 13px;
-  line-height: 1.5;
+  display: none;
 }
 
 .price-line {
@@ -652,20 +657,19 @@ textarea:focus {
 }
 
 .price {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 900;
   color: var(--red);
 }
 
 .date {
-  color: var(--muted);
-  font-size: 12px;
+  display: none;
 }
 
 .card-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 4px;
 }
 
 .card-remark {
@@ -691,12 +695,22 @@ textarea:focus {
   color: var(--ink);
   background: #fff;
   border-radius: 8px;
-  padding: 9px 8px;
+  min-height: 34px;
+  padding: 7px 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   font-weight: 700;
+}
+
+.mini-button span {
+  display: none;
+}
+
+.mini-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .mini-button.select {
@@ -1605,7 +1619,7 @@ textarea:focus {
   }
 
   .card-actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .auth-panel {
@@ -1615,7 +1629,7 @@ textarea:focus {
 
 @media (max-width: 480px) {
   .product-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .sidebar {
