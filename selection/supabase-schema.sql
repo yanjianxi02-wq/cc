@@ -40,6 +40,7 @@ create table if not exists public.product_overrides (
   plan_level text,
   style text,
   is_hidden boolean not null default false,
+  creator_sort_priority integer,
   updated_by text,
   updated_at timestamptz not null default now()
 );
@@ -56,6 +57,7 @@ create table if not exists public.product_catalog (
   plan_level text,
   season text not null default '秋',
   stock numeric,
+  creator_sort_priority integer,
   tag text not null default 'BI商品上新',
   points jsonb not null default '[]'::jsonb,
   source text not null default 'BI商品上新',
@@ -92,6 +94,7 @@ alter table public.product_overrides
   add column if not exists plan_level text,
   add column if not exists style text,
   add column if not exists is_hidden boolean not null default false,
+  add column if not exists creator_sort_priority integer,
   add column if not exists updated_by text,
   add column if not exists updated_at timestamptz not null default now();
 
@@ -106,6 +109,7 @@ alter table public.product_catalog
   add column if not exists plan_level text,
   add column if not exists season text not null default '秋',
   add column if not exists stock numeric,
+  add column if not exists creator_sort_priority integer,
   add column if not exists tag text not null default 'BI商品上新',
   add column if not exists points jsonb not null default '[]'::jsonb,
   add column if not exists source text not null default 'BI商品上新',

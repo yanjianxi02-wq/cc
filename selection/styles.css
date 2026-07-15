@@ -1234,6 +1234,21 @@ textarea:focus {
   min-width: 180px;
 }
 
+.batch-priority-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.batch-priority-field input {
+  width: 108px;
+  min-height: 40px;
+}
+
 .import-file {
   width: auto;
   min-height: 42px;
@@ -1254,7 +1269,7 @@ textarea:focus {
 
 .editor-row {
   display: grid;
-  grid-template-columns: 28px 72px minmax(150px, 1fr) 100px minmax(190px, 1.2fr) 100px 120px minmax(150px, 1fr) auto;
+  grid-template-columns: 28px 72px minmax(150px, 0.9fr) 92px minmax(170px, 1.15fr) 92px 116px 92px minmax(130px, 0.8fr) auto;
   gap: 12px;
   align-items: center;
   padding: 12px 0;
@@ -1322,6 +1337,16 @@ textarea:focus {
 .visibility-pill.hidden-product {
   background: #fff1e8;
   color: #b45309;
+}
+
+.priority-pill {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .field-hint {

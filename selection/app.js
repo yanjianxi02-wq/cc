@@ -153,6 +153,9 @@ const els = {
   brandBatchSelectedCount: document.getElementById("brandBatchSelectedCount"),
   brandBatchVisibility: document.getElementById("brandBatchVisibility"),
   brandBatchApplyButton: document.getElementById("brandBatchApplyButton"),
+  brandBatchPriorityStart: document.getElementById("brandBatchPriorityStart"),
+  brandBatchPriorityApplyButton: document.getElementById("brandBatchPriorityApplyButton"),
+  brandBatchPriorityClearButton: document.getElementById("brandBatchPriorityClearButton"),
   brandNewProductsFile: document.getElementById("brandNewProductsFile"),
   brandNewProductsButton: document.getElementById("brandNewProductsButton"),
   brandCatalogMeta: document.getElementById("brandCatalogMeta"),
@@ -253,6 +256,23 @@ function normalizeStock(value) {
   return Number.isFinite(stock) ? stock : null;
 }
 
+function normalizeCreatorSortPriority(value) {
+  if (value == null || value === "") return null;
+  const priority = Number(String(value).trim());
+  return Number.isInteger(priority) && priority > 0 && priority <= 9999 ? priority : null;
+}
+
+function priorityLabel(value) {
+  const priority = normalizeCreatorSortPriority(value);
+  return priority ? `优先级 ${priority}` : "自动排序";
+}
+
+function productSortPriority(product, override = state.productOverrides.get(product.sku)) {
+  return state.productOverrides.has(product.sku)
+    ? normalizeCreatorSortPriority(override?.creator_sort_priority)
+    : normalizeCreatorSortPriority(product.creator_sort_priority);
+}
+
 function matchesSeason(product, season) {
   if (season === "全部") return true;
   return normalizeSeason(product.season) === season;
@@ -290,9 +310,17 @@ function filteredProducts() {
       );
     })
     .sort((a, b) => {
+      const priorityA = normalizeCreatorSortPriority(a.creator_sort_priority) ?? Number.MAX_SAFE_INTEGER;
+      const priorityB = normalizeCreatorSortPriority(b.creator_sort_priority) ?? Number.MAX_SAFE_INTEGER;
+      const byPriority = priorityA - priorityB;
+      if (byPriority !== 0) return byPriority;
       const byLevel = levelOrder[a.level] - levelOrder[b.level];
       if (byLevel !== 0) return byLevel;
-      return new Date(a.date) - new Date(b.date);
+      const stockA = normalizeStock(a.stock) ?? -1;
+      const stockB = normalizeStock(b.stock) ?? -1;
+      const byStock = stockB - stockA;
+      if (byStock !== 0) return byStock;
+      return new Date(b.date || 0) - new Date(a.date || 0);
     });
 }
 
@@ -323,6 +351,7 @@ function applyProductOverrides() {
         img: override.image_url || product.img,
         level: override.plan_level || product.level,
         style: override.style || product.style,
+        creator_sort_priority: productSortPriority(product, override),
         hidden: Boolean(override.is_hidden),
       };
     })
@@ -867,6 +896,12 @@ function renderBrandBatchState(visibleSkus = []) {
   if (els.brandBatchApplyButton) {
     els.brandBatchApplyButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
   }
+  if (els.brandBatchPriorityApplyButton) {
+    els.brandBatchPriorityApplyButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
+  }
+  if (els.brandBatchPriorityClearButton) {
+    els.brandBatchPriorityClearButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
+  }
   if (els.brandSelectAll) {
     const selectable = visibleSkus.length ? visibleSkus : [];
     const selectedInView = selectable.filter((sku) => state.brandSelectedSkus.has(sku)).length;
@@ -916,6 +951,7 @@ function renderBrandProductEditor() {
           const saving = state.adminSavingSku === product.sku;
           const hasOverrideImage = Boolean(override.image_url);
           const checked = state.brandSelectedSkus.has(product.sku);
+          const sortPriority = productSortPriority(product, override);
           return `
             <div class="editor-row">
               <label class="editor-check">
@@ -931,6 +967,7 @@ function renderBrandProductEditor() {
                 <strong>${product.name} <span class="sku">${product.sku}</span></strong>
                 <small>基准：${priceText(baseProduct)} · ${escapeHtml(baseProduct.style)} · ${escapeHtml(baseProduct.level || "未标注")}</small>
                 <span class="visibility-pill ${product.hidden ? "hidden-product" : ""}">${visibilityText(product)}</span>
+                <span class="priority-pill">${priorityLabel(sortPriority)}</span>
               </div>
               <label>
                 <span>价格</span>
@@ -959,6 +996,10 @@ function renderBrandProductEditor() {
                   <option value="false" ${!product.hidden ? "selected" : ""}>达人可见</option>
                   <option value="true" ${product.hidden ? "selected" : ""}>达人不可见</option>
                 </select>
+              </label>
+              <label>
+                <span>达人端排序</span>
+                <input data-override-sku="${product.sku}" data-override-field="creator_sort_priority" type="number" min="1" max="9999" step="1" inputmode="numeric" value="${sortPriority ?? ""}" placeholder="留空自动" />
               </label>
               <label>
                 <span>风格线</span>
@@ -1459,6 +1500,7 @@ function productFromCatalogRow(row) {
     level: parseImportLevel(row.plan_level || existing?.level) || String(row.plan_level || existing?.level || "").trim(),
     season: normalizeSeason(row.season || existing?.season),
     stock: normalizeStock(row.stock ?? existing?.stock),
+    creator_sort_priority: normalizeCreatorSortPriority(row.creator_sort_priority),
     tag: String(row.tag || existing?.tag || "BI商品上新").trim(),
     img: String(row.image_url || existing?.img || `./assets/bi-current/${sku}.png`).trim(),
     points,
@@ -1518,6 +1560,7 @@ async function loadProductOverrides(options = {}) {
         image_url: item.image_url || "",
         plan_level: item.plan_level || "",
         style: item.style || "",
+        creator_sort_priority: normalizeCreatorSortPriority(item.creator_sort_priority),
         is_hidden: Boolean(item.is_hidden),
       },
     ])
@@ -1625,6 +1668,10 @@ async function collectOverrideDraft(sku) {
     image_url: imageUrl,
     plan_level: draft.plan_level || null,
     style: draft.style || null,
+    creator_sort_priority:
+      draft.creator_sort_priority === ""
+        ? null
+        : normalizeCreatorSortPriority(draft.creator_sort_priority),
     is_hidden: draft.is_hidden === "true",
   };
 }
@@ -1647,6 +1694,12 @@ async function saveProductOverride(sku) {
   }
   if (Number.isNaN(draft.price)) {
     showToast("价格格式不正确");
+    return;
+  }
+  if (draft.creator_sort_priority == null && String(
+    document.querySelector(`[data-override-sku="${sku}"][data-override-field="creator_sort_priority"]`)?.value || ""
+  ).trim()) {
+    showToast("排序优先级请填写 1 到 9999 的整数");
     return;
   }
   state.adminSavingSku = sku;
@@ -1697,6 +1750,10 @@ async function applyBatchVisibility() {
       image_url: override.image_url || null,
       plan_level: override.plan_level || null,
       style: override.style || null,
+      creator_sort_priority: productSortPriority(
+        productPool.find((product) => product.sku === sku) || { sku },
+        override
+      ),
       is_hidden: isHidden,
       updated_by: user?.email || "",
       updated_at: new Date().toISOString(),
@@ -1712,6 +1769,59 @@ async function applyBatchVisibility() {
   }
   state.brandSelectedSkus.clear();
   showToast(isHidden ? "已设为达人不可见" : "已设为达人可见");
+  await loadProductOverrides({ silent: true });
+  renderAdmin();
+  renderBrandProductEditor();
+}
+
+async function applyBatchSortPriority(clearPriority = false) {
+  if (!cloudEnabled) {
+    showToast("云端后台尚未完成配置");
+    return;
+  }
+  const skus = [...state.brandSelectedSkus];
+  if (!skus.length) {
+    showToast("请先勾选商品");
+    return;
+  }
+  const startValue = String(els.brandBatchPriorityStart?.value || "").trim();
+  const start = normalizeCreatorSortPriority(startValue);
+  if (!clearPriority && !start) {
+    showToast("请填写排序起始值，例如 1");
+    return;
+  }
+  const productIndex = new Map(productPool.map((product, index) => [product.sku, index]));
+  const orderedSkus = [...skus].sort((a, b) => (productIndex.get(a) ?? 0) - (productIndex.get(b) ?? 0));
+  state.adminSavingSku = "batch";
+  renderBrandProductEditor();
+  const {
+    data: { user },
+  } = await cloud.auth.getUser();
+  const payload = orderedSkus.map((sku, index) => {
+    const override = state.productOverrides.get(sku) || {};
+    return {
+      sku,
+      price: override.price ?? null,
+      image_url: override.image_url || null,
+      plan_level: override.plan_level || null,
+      style: override.style || null,
+      is_hidden: Boolean(override.is_hidden),
+      creator_sort_priority: clearPriority ? null : start + index,
+      updated_by: user?.email || "",
+      updated_at: new Date().toISOString(),
+    };
+  });
+  const { error } = await cloud.from("product_overrides").upsert(payload);
+  state.adminSavingSku = "";
+  if (error) {
+    console.error(error);
+    showToast("批量排序保存失败");
+    renderBrandProductEditor();
+    return;
+  }
+  state.brandSelectedSkus.clear();
+  if (els.brandBatchPriorityStart) els.brandBatchPriorityStart.value = "";
+  showToast(clearPriority ? "已恢复自动排序" : `已设置 ${payload.length} 款的达人端顺序`);
   await loadProductOverrides({ silent: true });
   renderAdmin();
   renderBrandProductEditor();
@@ -1748,6 +1858,12 @@ function parseImportLevel(value) {
   return ["S", "A", "B", "C"].includes(level) ? level : null;
 }
 
+function parseImportSortPriority(value) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text || ["自动", "清空", "clear", "auto", "none"].includes(text)) return null;
+  return normalizeCreatorSortPriority(text) ?? NaN;
+}
+
 function readImportRows(file) {
   return new Promise((resolve, reject) => {
     if (!window.XLSX) {
@@ -1775,6 +1891,7 @@ function readImportRows(file) {
 function buildImportPayload(rows, userEmail) {
   const payload = [];
   const missingSkus = [];
+  const invalidPrioritySkus = [];
   const seen = new Set();
   rows.forEach((row) => {
     const sku = String(
@@ -1799,6 +1916,15 @@ function buildImportPayload(rows, userEmail) {
     );
     const style = String(pickImportValue(row, ["风格线", "风格", "style"])).trim();
     const imageUrl = String(pickImportValue(row, ["图片链接", "图片", "image", "imageurl"])).trim();
+    const priorityRaw = pickImportValue(row, ["达人端排序", "达人排序", "排序优先级", "优先级", "creator_sort_priority"]);
+    const creatorSortPriority =
+      priorityRaw === ""
+        ? productSortPriority(product, override)
+        : parseImportSortPriority(priorityRaw);
+    if (Number.isNaN(creatorSortPriority)) {
+      invalidPrioritySkus.push(sku);
+      return;
+    }
 
     payload.push({
       sku,
@@ -1806,12 +1932,13 @@ function buildImportPayload(rows, userEmail) {
       image_url: imageUrl || override.image_url || null,
       plan_level: level ?? override.plan_level ?? null,
       style: style || override.style || null,
+      creator_sort_priority: creatorSortPriority,
       is_hidden: visibility ?? Boolean(override.is_hidden),
       updated_by: userEmail || "",
       updated_at: new Date().toISOString(),
     });
   });
-  return { payload, missingSkus };
+  return { payload, missingSkus, invalidPrioritySkus };
 }
 
 function buildCatalogImportPayload(rows, userEmail) {
@@ -1868,6 +1995,11 @@ function buildCatalogImportPayload(rows, userEmail) {
       pickImportValue(row, ["库存", "可用库存", "现货库存", "stock", "inventory"]) || existing?.stock
     );
     const tag = String(pickImportValue(row, ["标签", "tag"]) || existing?.tag || "BI商品上新").trim();
+    const priorityRaw = pickImportValue(row, ["达人端排序", "达人排序", "排序优先级", "优先级", "creator_sort_priority"]);
+    const creatorSortPriority =
+      priorityRaw === ""
+        ? normalizeCreatorSortPriority(existing?.creator_sort_priority)
+        : parseImportSortPriority(priorityRaw);
     payload.push({
       sku,
       id: sku,
@@ -1880,6 +2012,7 @@ function buildCatalogImportPayload(rows, userEmail) {
       plan_level: level || null,
       season,
       stock,
+      creator_sort_priority: Number.isNaN(creatorSortPriority) ? null : creatorSortPriority,
       tag,
       points: [
         "来自 BI 商品上新",
@@ -1954,7 +2087,7 @@ async function importProductOverrides() {
     const {
       data: { user },
     } = await cloud.auth.getUser();
-    const { payload, missingSkus } = buildImportPayload(rows, user?.email || "");
+    const { payload, missingSkus, invalidPrioritySkus } = buildImportPayload(rows, user?.email || "");
     if (!payload.length) {
       showToast("表格里没有匹配到可修改款号");
       return;
@@ -1966,7 +2099,7 @@ async function importProductOverrides() {
       return;
     }
     els.brandImportFile.value = "";
-    showToast(`已导入修改 ${payload.length} 款${missingSkus.length ? `，${missingSkus.length} 款未匹配` : ""}`);
+    showToast(`已导入修改 ${payload.length} 款${missingSkus.length ? `，${missingSkus.length} 款未匹配` : ""}${invalidPrioritySkus.length ? `，${invalidPrioritySkus.length} 款排序无效` : ""}`);
     await loadProductOverrides({ silent: true });
     renderAdmin();
     renderBrandProductEditor();
@@ -2261,6 +2394,12 @@ if (els.brandSelectAll) {
 }
 if (els.brandBatchApplyButton) {
   els.brandBatchApplyButton.addEventListener("click", applyBatchVisibility);
+}
+if (els.brandBatchPriorityApplyButton) {
+  els.brandBatchPriorityApplyButton.addEventListener("click", () => applyBatchSortPriority(false));
+}
+if (els.brandBatchPriorityClearButton) {
+  els.brandBatchPriorityClearButton.addEventListener("click", () => applyBatchSortPriority(true));
 }
 if (els.brandImportButton) {
   els.brandImportButton.addEventListener("click", importProductOverrides);

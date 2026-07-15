@@ -500,6 +500,16 @@
                 <button class="primary-button" id="brandBatchApplyButton" type="button">
                   <i data-lucide="check-check"></i><span>应用</span>
                 </button>
+                <label class="batch-priority-field">
+                  <span>达人排序起始值</span>
+                  <input id="brandBatchPriorityStart" type="number" min="1" max="9999" step="1" inputmode="numeric" placeholder="例如 1" />
+                </label>
+                <button class="ghost-button" id="brandBatchPriorityApplyButton" type="button">
+                  <i data-lucide="list-ordered"></i><span>设置排序</span>
+                </button>
+                <button class="ghost-button" id="brandBatchPriorityClearButton" type="button">
+                  <i data-lucide="list-restart"></i><span>恢复自动</span>
+                </button>
                 <label class="import-file">
                   <input id="brandImportFile" type="file" accept=".xlsx,.xls,.csv" />
                   <span>导入表格</span>
