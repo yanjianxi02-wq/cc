@@ -1676,6 +1676,32 @@ async function collectOverrideDraft(sku) {
   };
 }
 
+function isPriorityColumnError(error) {
+  return /creator_sort_priority/i.test(
+    `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`
+  );
+}
+
+async function upsertProductOverrides(payload) {
+  const result = await cloud.from("product_overrides").upsert(payload);
+  if (!result.error || !isPriorityColumnError(result.error)) {
+    return { error: result.error, priorityUnavailable: false };
+  }
+  const fallbackPayload = payload.map(({ creator_sort_priority, ...item }) => item);
+  const fallback = await cloud.from("product_overrides").upsert(fallbackPayload);
+  return { error: fallback.error, priorityUnavailable: !fallback.error };
+}
+
+async function upsertProductCatalog(payload) {
+  const result = await cloud.from("product_catalog").upsert(payload);
+  if (!result.error || !isPriorityColumnError(result.error)) {
+    return { error: result.error, priorityUnavailable: false };
+  }
+  const fallbackPayload = payload.map(({ creator_sort_priority, ...item }) => item);
+  const fallback = await cloud.from("product_catalog").upsert(fallbackPayload);
+  return { error: fallback.error, priorityUnavailable: !fallback.error };
+}
+
 async function saveProductOverride(sku) {
   if (!cloudEnabled) {
     showToast("云端后台尚未完成配置");
@@ -1712,7 +1738,7 @@ async function saveProductOverride(sku) {
     updated_by: user?.email || "",
     updated_at: new Date().toISOString(),
   };
-  const { error } = await cloud.from("product_overrides").upsert(payload);
+  const { error, priorityUnavailable } = await upsertProductOverrides(payload);
   state.adminSavingSku = "";
   if (error) {
     console.error(error);
@@ -1720,7 +1746,7 @@ async function saveProductOverride(sku) {
     renderBrandProductEditor();
     return;
   }
-  showToast("商品配置已保存");
+  showToast(priorityUnavailable ? "其他配置已保存，达人排序需先升级云端" : "商品配置已保存");
   await loadProductOverrides({ silent: true });
   renderAdmin();
   renderBrandProductEditor();
@@ -1759,7 +1785,7 @@ async function applyBatchVisibility() {
       updated_at: new Date().toISOString(),
     };
   });
-  const { error } = await cloud.from("product_overrides").upsert(payload);
+  const { error, priorityUnavailable } = await upsertProductOverrides(payload);
   state.adminSavingSku = "";
   if (error) {
     console.error(error);
@@ -1768,7 +1794,13 @@ async function applyBatchVisibility() {
     return;
   }
   state.brandSelectedSkus.clear();
-  showToast(isHidden ? "已设为达人不可见" : "已设为达人可见");
+  showToast(
+    priorityUnavailable
+      ? "可见性已更新，达人排序需先升级云端"
+      : isHidden
+        ? "已设为达人不可见"
+        : "已设为达人可见"
+  );
   await loadProductOverrides({ silent: true });
   renderAdmin();
   renderBrandProductEditor();
@@ -1811,11 +1843,16 @@ async function applyBatchSortPriority(clearPriority = false) {
       updated_at: new Date().toISOString(),
     };
   });
-  const { error } = await cloud.from("product_overrides").upsert(payload);
+  const { error, priorityUnavailable } = await upsertProductOverrides(payload);
   state.adminSavingSku = "";
   if (error) {
     console.error(error);
     showToast("批量排序保存失败");
+    renderBrandProductEditor();
+    return;
+  }
+  if (priorityUnavailable) {
+    showToast("请先升级云端数据库后再设置达人排序");
     renderBrandProductEditor();
     return;
   }
@@ -2050,14 +2087,14 @@ async function importNewProducts() {
       showToast("表格里没有可更新的款号");
       return;
     }
-    const { error } = await cloud.from("product_catalog").upsert(payload);
+    const { error, priorityUnavailable } = await upsertProductCatalog(payload);
     if (error) {
       console.error(error);
       showToast("新品更新失败，请先确认云端商品池表已创建");
       return;
     }
     els.brandNewProductsFile.value = "";
-    showToast(`已更新新品 ${payload.length} 款${skipped.length ? `，${skipped.length} 行缺少款号` : ""}`);
+    showToast(`已更新新品 ${payload.length} 款${skipped.length ? `，${skipped.length} 行缺少款号` : ""}${priorityUnavailable ? "，达人排序列待升级云端后生效" : ""}`);
     await loadProductCatalog({ silent: true });
     await loadProductOverrides({ silent: true });
     renderAdmin();
@@ -2092,14 +2129,14 @@ async function importProductOverrides() {
       showToast("表格里没有匹配到可修改款号");
       return;
     }
-    const { error } = await cloud.from("product_overrides").upsert(payload);
+    const { error, priorityUnavailable } = await upsertProductOverrides(payload);
     if (error) {
       console.error(error);
       showToast("导入保存失败");
       return;
     }
     els.brandImportFile.value = "";
-    showToast(`已导入修改 ${payload.length} 款${missingSkus.length ? `，${missingSkus.length} 款未匹配` : ""}${invalidPrioritySkus.length ? `，${invalidPrioritySkus.length} 款排序无效` : ""}`);
+    showToast(`已导入修改 ${payload.length} 款${missingSkus.length ? `，${missingSkus.length} 款未匹配` : ""}${invalidPrioritySkus.length ? `，${invalidPrioritySkus.length} 款排序无效` : ""}${priorityUnavailable ? "，达人排序列待升级云端后生效" : ""}`);
     await loadProductOverrides({ silent: true });
     renderAdmin();
     renderBrandProductEditor();
