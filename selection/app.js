@@ -262,6 +262,20 @@ function normalizeStock(value) {
   return Number.isFinite(stock) ? stock : null;
 }
 
+function normalizePresaleStock(value) {
+  if (value == null) return "";
+  return String(value).replace(/\s+/g, " ").trim().slice(0, 100);
+}
+
+function stockDisplay(value) {
+  const stock = normalizeStock(value);
+  return stock == null ? "暂未配置" : `${new Intl.NumberFormat("zh-CN").format(stock)} 件`;
+}
+
+function presaleStockDisplay(value) {
+  return normalizePresaleStock(value) || "暂未配置";
+}
+
 function normalizeCreatorSortPriority(value) {
   if (value == null || value === "") return null;
   const priority = Number(String(value).trim());
@@ -1036,9 +1050,17 @@ function renderBrandProductEditor() {
                 <input data-override-sku="${product.sku}" data-override-field="price" value="${override.price ?? product.price ?? ""}" inputmode="decimal" />
               </label>
               <label>
+                <span>现货库存</span>
+                <input data-override-sku="${product.sku}" data-override-field="stock" value="${product.stock ?? ""}" inputmode="numeric" placeholder="例如 500" />
+              </label>
+              <label>
                 <span>本地图片</span>
                 <input data-override-sku="${product.sku}" data-override-field="image_file" type="file" accept="image/*" />
                 <small class="field-hint">${hasOverrideImage ? "当前使用已上传图片" : "未上传新图则保留当前图片"}</small>
+              </label>
+              <label>
+                <span>预售库存 / 产能</span>
+                <input data-override-sku="${product.sku}" data-override-field="presale_stock" value="${escapeHtml(product.presale_stock || "")}" placeholder="例如 15天不限量" />
               </label>
               <label>
                 <span>产品等级</span>
@@ -1128,6 +1150,8 @@ function openDetail(id) {
           <div><span class="field-label">价格</span><strong>${priceText(product)}</strong></div>
           <div><span class="field-label">风格线</span><strong>${product.style}</strong></div>
           <div><span class="field-label">商品等级</span><strong>${product.level || "未标注"}</strong></div>
+          <div><span class="field-label">现货库存</span><strong>${stockDisplay(product.stock)}</strong></div>
+          <div><span class="field-label">预售库存 / 产能</span><strong>${escapeHtml(presaleStockDisplay(product.presale_stock))}</strong></div>
         </div>
         <div>
           <span class="field-label">商品卖点</span>
@@ -1559,6 +1583,7 @@ function productFromCatalogRow(row) {
     level: parseImportLevel(row.plan_level || existing?.level) || String(row.plan_level || existing?.level || "").trim(),
     season: normalizeSeason(row.season || existing?.season),
     stock: normalizeStock(row.stock ?? existing?.stock),
+    presale_stock: normalizePresaleStock(row.presale_stock ?? existing?.presale_stock),
     creator_sort_priority: normalizeCreatorSortPriority(row.creator_sort_priority),
     tag: String(row.tag || existing?.tag || "BI商品上新").trim(),
     img: String(row.image_url || existing?.img || `./assets/bi-current/${sku}.png`).trim(),
@@ -1728,6 +1753,8 @@ async function collectOverrideDraft(sku) {
     image_url: imageUrl,
     plan_level: draft.plan_level || null,
     style: draft.style || null,
+    stock: draft.stock === "" ? null : normalizeStock(draft.stock) ?? NaN,
+    presale_stock: normalizePresaleStock(draft.presale_stock),
     creator_sort_priority:
       draft.is_hidden === "true" ? null : product ? productSortPriority(product) : null,
     is_hidden: draft.is_hidden === "true",
@@ -1738,6 +1765,27 @@ function isPriorityColumnError(error) {
   return /creator_sort_priority/i.test(
     `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`
   );
+}
+
+function isPresaleStockColumnError(error) {
+  return /presale_stock/i.test(`${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`);
+}
+
+async function updateCatalogInventory(sku, draft, userEmail) {
+  const { data, error } = await cloud
+    .from("product_catalog")
+    .update({
+      stock: draft.stock,
+      presale_stock: draft.presale_stock || null,
+      updated_by: userEmail || "",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("sku", sku)
+    .select("sku")
+    .maybeSingle();
+  if (error) return { error, presaleUnavailable: isPresaleStockColumnError(error) };
+  if (!data) return { error: new Error("catalog-product-missing"), presaleUnavailable: false };
+  return { error: null, presaleUnavailable: false };
 }
 
 async function upsertProductOverrides(payload) {
@@ -1780,11 +1828,23 @@ async function saveProductOverride(sku) {
     showToast("价格格式不正确");
     return;
   }
+  if (Number.isNaN(draft.stock)) {
+    showToast("现货库存请输入数字");
+    return;
+  }
   state.adminSavingSku = sku;
   renderBrandProductEditor();
   const {
     data: { user },
   } = await cloud.auth.getUser();
+  const inventoryResult = await updateCatalogInventory(sku, draft, user?.email || "");
+  if (inventoryResult.error) {
+    state.adminSavingSku = "";
+    console.error(inventoryResult.error);
+    showToast(inventoryResult.presaleUnavailable ? "请先升级云端库存字段" : "库存保存失败");
+    renderBrandProductEditor();
+    return;
+  }
   const payload = {
     ...draft,
     updated_by: user?.email || "",
@@ -1799,6 +1859,7 @@ async function saveProductOverride(sku) {
     return;
   }
   showToast(priorityUnavailable ? "其他配置已保存，达人排序需先升级云端" : "商品配置已保存");
+  await loadProductCatalog({ silent: true });
   await loadProductOverrides({ silent: true });
   renderAdmin();
   renderBrandProductEditor();
@@ -2164,9 +2225,19 @@ function buildCatalogImportPayload(rows, userEmail) {
     const season = normalizeSeason(
       pickImportValue(row, ["季节", "季", "season"]) || existing?.season
     );
-    const stock = normalizeStock(
-      pickImportValue(row, ["库存", "可用库存", "现货库存", "stock", "inventory"]) || existing?.stock
-    );
+    const stockRaw = pickImportValue(row, ["库存", "可用库存", "现货库存", "stock", "inventory"]);
+    const stock = normalizeStock(stockRaw === "" ? existing?.stock : stockRaw);
+    const presaleRaw = pickImportValue(row, [
+      "预售库存",
+      "预售库存/产能",
+      "预售产能",
+      "预售",
+      "产能",
+      "presale_stock",
+      "presale",
+    ]);
+    const presaleStock =
+      presaleRaw === "" ? normalizePresaleStock(existing?.presale_stock) : normalizePresaleStock(presaleRaw);
     const tag = String(pickImportValue(row, ["标签", "tag"]) || existing?.tag || "BI商品上新").trim();
     const priorityRaw = pickImportValue(row, ["达人端排序", "达人排序", "排序优先级", "优先级", "creator_sort_priority"]);
     const creatorSortPriority =
@@ -2185,6 +2256,7 @@ function buildCatalogImportPayload(rows, userEmail) {
       plan_level: level || null,
       season,
       stock,
+      presale_stock: presaleStock || null,
       creator_sort_priority: Number.isNaN(creatorSortPriority) ? null : creatorSortPriority,
       tag,
       points: [
