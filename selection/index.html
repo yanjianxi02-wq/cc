@@ -480,6 +480,29 @@
               <div class="catalog-update-note" id="brandCatalogMeta">当前商品池 825 款</div>
             </div>
 
+            <div class="admin-card priority-manager-card">
+              <div class="editor-head">
+                <div>
+                  <h3>达人端前排推荐</h3>
+                  <p>勾选下方货品后加入前排；拖拽调整顺序，未加入商品继续自动补位。</p>
+                </div>
+                <div class="priority-manager-actions">
+                  <button class="ghost-button" id="brandFrontPreviewButton" type="button">
+                    <i data-lucide="monitor-smartphone"></i><span>预览达人端前20</span>
+                  </button>
+                  <button class="ghost-button" id="brandFrontExportButton" type="button">
+                    <i data-lucide="download"></i><span>导出完整顺序</span>
+                  </button>
+                  <button class="ghost-button" id="brandFrontClearButton" type="button">
+                    <i data-lucide="list-restart"></i><span>清空前排</span>
+                  </button>
+                </div>
+              </div>
+              <div class="front-queue-summary" id="brandFrontQueueSummary"></div>
+              <div class="front-queue" id="brandFrontQueue"></div>
+              <div class="front-preview hidden" id="brandFrontPreview"></div>
+            </div>
+
             <div class="admin-card admin-editor-card">
               <div class="editor-head">
                 <div>
@@ -500,15 +523,8 @@
                 <button class="primary-button" id="brandBatchApplyButton" type="button">
                   <i data-lucide="check-check"></i><span>应用</span>
                 </button>
-                <label class="batch-priority-field">
-                  <span>达人排序起始值</span>
-                  <input id="brandBatchPriorityStart" type="number" min="1" max="9999" step="1" inputmode="numeric" placeholder="例如 1" />
-                </label>
-                <button class="ghost-button" id="brandBatchPriorityApplyButton" type="button">
-                  <i data-lucide="list-ordered"></i><span>设置排序</span>
-                </button>
-                <button class="ghost-button" id="brandBatchPriorityClearButton" type="button">
-                  <i data-lucide="list-restart"></i><span>恢复自动</span>
+                <button class="primary-button" id="brandAddToFrontButton" type="button">
+                  <i data-lucide="list-plus"></i><span>加入前排</span>
                 </button>
                 <label class="import-file">
                   <input id="brandImportFile" type="file" accept=".xlsx,.xls,.csv" />

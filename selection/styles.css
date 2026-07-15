@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.3 seconds
-Output:
 :root {
   --ink: #20242a;
   --muted: #6f7782;
@@ -1163,6 +1160,10 @@ textarea:focus {
   margin-top: 14px;
 }
 
+.priority-manager-card {
+  margin-top: 14px;
+}
+
 .catalog-update-card {
   margin-top: 14px;
 }
@@ -1234,19 +1235,152 @@ textarea:focus {
   min-width: 180px;
 }
 
-.batch-priority-field {
+.priority-manager-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: auto;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
+  flex-wrap: wrap;
 }
 
-.batch-priority-field input {
-  width: 108px;
-  min-height: 40px;
+.front-queue-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.front-queue-summary strong {
+  color: var(--green-dark);
+  font-size: 22px;
+}
+
+.front-queue {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.front-queue-empty {
+  grid-column: 1 / -1;
+  padding: 28px 18px;
+  border: 1px dashed #cbd8d2;
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.front-queue-item {
+  display: grid;
+  grid-template-columns: 18px 32px 38px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  cursor: grab;
+}
+
+.front-queue-item:active {
+  cursor: grabbing;
+}
+
+.front-queue-item.dragging {
+  opacity: 0.48;
+}
+
+.front-queue-item.drag-over {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px rgba(15, 137, 97, 0.15);
+}
+
+.front-drag-handle {
+  color: #9aa8a1;
+  display: grid;
+  place-items: center;
+}
+
+.front-rank {
+  color: var(--green);
+  font-size: 13px;
+}
+
+.front-queue-item img {
+  width: 38px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: #f1f1ed;
+}
+
+.front-queue-meta {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.front-queue-meta strong,
+.front-queue-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.front-queue-meta span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.front-remove-button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+.front-preview {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.front-preview-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.front-preview-card strong {
+  color: var(--green);
+}
+
+.front-preview-card img {
+  width: 100%;
+  aspect-ratio: 3 / 3.7;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #f1f1ed;
+}
+
+.front-preview-card span,
+.front-preview-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.front-preview-card small {
+  color: var(--blue);
 }
 
 .import-file {
@@ -1269,7 +1403,7 @@ textarea:focus {
 
 .editor-row {
   display: grid;
-  grid-template-columns: 28px 72px minmax(150px, 0.9fr) 92px minmax(170px, 1.15fr) 92px 116px 92px minmax(130px, 0.8fr) auto;
+  grid-template-columns: 28px 72px minmax(150px, 0.9fr) 92px minmax(170px, 1.15fr) 92px 116px minmax(130px, 0.8fr) auto;
   gap: 12px;
   align-items: center;
   padding: 12px 0;
@@ -1590,6 +1724,14 @@ textarea:focus {
     justify-content: flex-start;
   }
 
+  .front-queue {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .front-preview {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
   .auth-grid {
     grid-template-columns: 1fr;
   }
@@ -1653,6 +1795,22 @@ textarea:focus {
   .auth-panel {
     padding: 18px;
   }
+
+  .priority-manager-actions {
+    width: 100%;
+  }
+
+  .priority-manager-actions .ghost-button {
+    flex: 1;
+  }
+
+  .front-queue {
+    grid-template-columns: 1fr;
+  }
+
+  .front-preview {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 480px) {
@@ -1664,4 +1822,3 @@ textarea:focus {
     padding: 16px 12px;
   }
 }
-
