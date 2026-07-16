@@ -19,6 +19,8 @@
 
 const baseProductPool = (window.BI_PRODUCTS?.length ? window.BI_PRODUCTS : products).map((product) => ({
   ...product,
+  price: normalizePriceValue(product.price),
+  stock: normalizeStock(product.stock),
 }));
 const productPool = baseProductPool.map((product) => ({ ...product }));
 const cloudConfig = window.SUPABASE_CONFIG || {};
@@ -227,7 +229,11 @@ function replaceBaseProductPool(nextProducts, source = "cloud") {
   baseProductPool.splice(
     0,
     baseProductPool.length,
-    ...nextProducts.map((product) => ({ ...product }))
+    ...nextProducts.map((product) => ({
+      ...product,
+      price: normalizePriceValue(product.price),
+      stock: normalizeStock(product.stock),
+    }))
   );
   state.catalogSource = source;
   state.brandSelectedSkus.clear();
@@ -236,8 +242,8 @@ function replaceBaseProductPool(nextProducts, source = "cloud") {
 
 function matchesPrice(product, range) {
   if (range === "全部") return true;
-  if (product.price == null) return false;
-  const price = product.price;
+  const price = normalizePriceValue(product.price);
+  if (price == null) return false;
   if (range === "1-50") return price >= 1 && price < 50;
   if (range === "50-100") return price >= 50 && price < 100;
   if (range === "100-300") return price >= 100 && price < 300;
@@ -259,7 +265,7 @@ function normalizeSeason(value) {
 function normalizeStock(value) {
   if (value == null || value === "") return null;
   const stock = Number(String(value).replace(/[,\s件]/g, ""));
-  return Number.isFinite(stock) ? stock : null;
+  return Number.isFinite(stock) ? Math.trunc(stock) : null;
 }
 
 function normalizePresaleStock(value) {
@@ -359,7 +365,8 @@ function levelClass(level) {
 }
 
 function priceText(product) {
-  return product.price == null ? "价格待确认" : `￥${product.price}`;
+  const price = normalizePriceValue(product.price);
+  return price == null ? "价格待确认" : `￥${price}`;
 }
 
 function syncRemarkFields(id, value, source) {
@@ -377,7 +384,8 @@ function applyProductOverrides() {
       const override = state.productOverrides.get(product.sku) || {};
       return {
         ...product,
-        price: override.price ?? product.price,
+        price: normalizePriceValue(override.price ?? product.price),
+        stock: normalizeStock(product.stock),
         img: override.image_url || product.img,
         level: override.plan_level || product.level,
         style: override.style || product.style,
@@ -446,11 +454,12 @@ function setAppVisibility(loggedIn) {
 }
 
 function priceBand(product) {
-  if (product.price == null) return "待确认";
-  if (product.price < 150) return "149以下";
-  if (product.price < 200) return "150-199";
-  if (product.price < 250) return "200-249";
-  if (product.price < 300) return "250-299";
+  const price = normalizePriceValue(product.price);
+  if (price == null) return "待确认";
+  if (price < 150) return "149以下";
+  if (price < 200) return "150-199";
+  if (price < 250) return "200-249";
+  if (price < 300) return "250-299";
   return "300以上";
 }
 
@@ -472,7 +481,9 @@ function percent(value, total) {
 }
 
 function averagePrice(list) {
-  const prices = list.map((product) => product.price).filter((price) => Number.isFinite(price));
+  const prices = list
+    .map((product) => normalizePriceValue(product.price))
+    .filter((price) => price != null);
   if (!prices.length) return "-";
   return `￥${Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length)}`;
 }
@@ -1557,7 +1568,8 @@ function normalizeCatalogDate(value) {
 function normalizePriceValue(value) {
   if (value == null || value === "") return null;
   const price = Number(String(value).replace(/[￥,\s]/g, ""));
-  return Number.isFinite(price) ? price : null;
+  if (!Number.isFinite(price)) return null;
+  return Math.trunc(price * 10 + Number.EPSILON) / 10;
 }
 
 function productFromCatalogRow(row) {
@@ -1640,7 +1652,7 @@ async function loadProductOverrides(options = {}) {
     (data || []).map((item) => [
       item.sku,
       {
-        price: item.price == null ? null : Number(item.price),
+        price: normalizePriceValue(item.price),
         image_url: item.image_url || "",
         plan_level: item.plan_level || "",
         style: item.style || "",
@@ -1744,12 +1756,7 @@ async function collectOverrideDraft(sku) {
   const product = productPool.find((item) => item.sku === sku);
   return {
     sku,
-    price:
-      draft.price === ""
-        ? null
-        : Number.isFinite(Number(draft.price))
-          ? Number(draft.price)
-          : NaN,
+    price: draft.price === "" ? null : normalizePriceValue(draft.price) ?? NaN,
     image_url: imageUrl,
     plan_level: draft.plan_level || null,
     style: draft.style || null,
@@ -2044,8 +2051,8 @@ function exportBrandFrontQueue() {
       product.name,
       product.category,
       product.level || "未标注",
-      product.stock ?? "",
-      product.price ?? "",
+      normalizeStock(product.stock) ?? "",
+      normalizePriceValue(product.price) ?? "",
       product.hidden ? "否" : "是",
     ]),
   ];
@@ -2140,8 +2147,8 @@ function buildImportPayload(rows, userEmail) {
     }
     const override = state.productOverrides.get(sku) || {};
     const priceRaw = pickImportValue(row, ["价格", "达播价", "售价", "price"]);
-    const price = priceRaw === "" ? override.price ?? null : Number(priceRaw);
-    if (Number.isNaN(price)) return;
+    const price = priceRaw === "" ? normalizePriceValue(override.price) : normalizePriceValue(priceRaw);
+    if (priceRaw !== "" && price == null) return;
     const level = parseImportLevel(
       pickImportValue(row, ["产品等级", "等级", "品牌计划等级", "planlevel", "level"])
     );
