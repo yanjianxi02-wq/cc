@@ -1,3 +1,5 @@
+-- After initial schema setup, run supabase-access-hardening-migration.sql.
+-- The migration removes public catalog access and binds submissions to auth identities.
 create extension if not exists pgcrypto;
 
 create table if not exists public.submissions (

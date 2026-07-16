@@ -1,23 +1,7 @@
-﻿const products = [
-  { id: "18637076", name: "裤子", sku: "18637076", category: "裤子", date: "2026-05-27", style: "田园-度假", price: 254, level: "B", tag: "BI商品上新", img: "./assets/bi-current/18637076.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-度假"] },
-  { id: "18618053", name: "衬衣", sku: "18618053", category: "衬衣", date: "2026-06-10", style: "简约通勤", price: null, level: "A", tag: "BI商品上新", img: "./assets/bi-current/18618053.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：简约通勤"] },
-  { id: "18637089", name: "T恤", sku: "18637089", category: "T恤", date: "2026-06-17", style: "田园-复古", price: null, level: "A", tag: "BI商品上新", img: "./assets/bi-current/18637089.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-复古"] },
-  { id: "18637024", name: "T恤", sku: "18637024", category: "T恤", date: "2026-06-24", style: "田园-复古", price: null, level: "B", tag: "BI商品上新", img: "./assets/bi-current/18637024.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-复古"] },
-  { id: "18637124", name: "衬衣", sku: "18637124", category: "衬衣", date: "2026-06-25", style: "田园-休闲", price: 194, level: "A", tag: "BI商品上新", img: "./assets/bi-current/18637124.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-休闲"] },
-  { id: "18637276", name: "牛仔裤", sku: "18637276", category: "牛仔裤", date: "2026-06-26", style: "田园-复古", price: 279, level: "B", tag: "BI商品上新", img: "./assets/bi-current/18637276.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-复古"] },
-  { id: "W18637366", name: "衬衣", sku: "W18637366", category: "衬衣", date: "2026-07-01", style: "田园-复古", price: null, level: "B", tag: "BI商品上新", img: "./assets/bi-current/W18637366.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-复古"] },
-  { id: "18637012", name: "(仿)毛衣", sku: "18637012", category: "针织", date: "2026-07-01", style: "文艺知性通勤", price: null, level: "A", tag: "BI商品上新", img: "./assets/bi-current/18637012.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：文艺知性通勤"] },
-  { id: "18637150", name: "衬衣", sku: "18637150", category: "衬衣", date: "2026-07-02", style: "田园-法式", price: 254, level: "A", tag: "BI商品上新", img: "./assets/bi-current/18637150.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-法式"] },
-  { id: "F18518425H1", name: "衬衣", sku: "F18518425H1", category: "衬衣", date: "2026-07-08", style: "田园-法式", price: null, level: "B", tag: "BI商品上新", img: "./assets/bi-current/F18518425H1.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-法式"] },
-  { id: "F18618721", name: "裤子", sku: "F18618721", category: "裤子", date: "2026-07-08", style: "田园-清新", price: null, level: "C", tag: "BI商品上新", img: "./assets/bi-current/F18618721.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-清新"] },
-  { id: "18637020", name: "(仿)毛衣", sku: "18637020", category: "针织", date: "2026-07-09", style: "田园-休闲", price: null, level: "B", tag: "BI商品上新", img: "./assets/bi-current/18637020.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-休闲"] },
-  { id: "18538120", name: "衬衣", sku: "18538120", category: "衬衣", date: "2026-07-15", style: "田园-度假", price: 254, level: "C", tag: "BI商品上新", img: "./assets/bi-current/18538120.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-度假"] },
-  { id: "18637053", name: "衬衣", sku: "18637053", category: "衬衣", date: "2026-07-15", style: "田园-复古", price: 219, level: "A", tag: "BI商品上新", img: "./assets/bi-current/18637053.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-复古"] },
-  { id: "W18637066", name: "羊毛衫", sku: "W18637066", category: "针织", date: "2026-07-16", style: "田园-复古", price: 254, level: "A", tag: "BI商品上新", img: "./assets/bi-current/W18637066.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-复古"] },
-  { id: "18637236", name: "外套 上衣", sku: "18637236", category: "外套", date: "2026-07-22", style: "田园-复古", price: null, level: "B", tag: "BI商品上新", img: "./assets/bi-current/18637236.png", points: ["来自 BI 商品上新", "筛选口径：茵曼服装 / 2026 / 秋季 / 线上 / 类目全部", "风格线：田园-复古"] }
-];
+const products = [];
 
-const baseProductPool = (window.BI_PRODUCTS?.length ? window.BI_PRODUCTS : products).map((product) => ({
+// Public creator sessions must obtain products through the guarded RPC.
+const baseProductPool = products.map((product) => ({
   ...product,
   price: normalizePriceValue(product.price),
   stock: normalizeStock(product.stock),
@@ -60,7 +44,7 @@ const state = {
   brandFrontDraggingSku: "",
   adminSavingSku: "",
   productOverrides: new Map(),
-  catalogSource: window.BI_PRODUCTS?.length ? "local-bi" : "fallback",
+  catalogSource: "cloud",
   productSummaryCollapsed: false,
   creatorRequests: [],
   currentSession: null,
@@ -1226,12 +1210,6 @@ function setView(view) {
 function selectionPayload() {
   return [...state.selected.values()].map((product) => ({
     sku: product.sku,
-    product_name: product.name,
-    category: product.category,
-    style: product.style,
-    plan_level: product.level || "",
-    price: product.price,
-    image_url: product.img,
     is_featured: state.featured.has(product.id),
     intent:
       state.intents.get(product.id) ||
@@ -1241,7 +1219,11 @@ function selectionPayload() {
 }
 
 async function submitSelection() {
-  const creatorName = els.creatorNameInput.value.trim();
+  if (state.currentRole !== "creator" || !state.creatorProfile) {
+    showToast("请使用已审核的达人账号登录后提交");
+    return;
+  }
+  const creatorName = String(state.creatorProfile.creator_name || "").trim();
   if (!creatorName) {
     els.creatorNameInput.focus();
     showToast("请先填写达人名称");
@@ -1266,7 +1248,6 @@ async function submitSelection() {
   showToast("正在提交选款...");
 
   const { error } = await cloud.rpc("submit_selection", {
-    p_creator_name: creatorName,
     p_items: selectionPayload(),
   });
 
@@ -1608,12 +1589,16 @@ async function loadProductCatalog(options = {}) {
     renderCatalogMeta();
     return;
   }
-  const { data, error } = await cloud
-    .from("product_catalog")
-    .select("*")
-    .eq("is_active", true)
-    .order("updated_at", { ascending: false })
-    .limit(5000);
+  const productRequest =
+    state.currentRole === "creator"
+      ? cloud.rpc("get_creator_visible_products")
+      : cloud
+          .from("product_catalog")
+          .select("*")
+          .eq("is_active", true)
+          .order("updated_at", { ascending: false })
+          .limit(5000);
+  const { data, error } = await productRequest;
   if (error) {
     console.error(error);
     if (!options.silent) showToast("云端新品池读取失败，将继续使用本地商品池");
@@ -1622,7 +1607,7 @@ async function loadProductCatalog(options = {}) {
   }
   const rows = data || [];
   if (!rows.length) {
-    state.catalogSource = "local-bi";
+    state.catalogSource = "cloud";
     refreshProductViews();
     return;
   }
@@ -1640,6 +1625,16 @@ async function loadProductOverrides(options = {}) {
     pruneHiddenSelections();
     renderProducts();
     renderSelected();
+    return;
+  }
+  if (state.currentRole === "creator") {
+    // Creator-facing catalog rows are already resolved by the server RPC.
+    state.productOverrides = new Map();
+    applyProductOverrides();
+    pruneHiddenSelections();
+    renderProducts();
+    renderSelected();
+    renderCatalogMeta();
     return;
   }
   const { data, error } = await cloud.from("product_overrides").select("*").limit(5000);
@@ -2728,5 +2723,3 @@ if (cloudEnabled) {
 }
 syncAccessSession();
 refreshIcons();
-
-
