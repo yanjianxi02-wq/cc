@@ -329,7 +329,17 @@
                 <h2>商品池</h2>
                 <p>来自 BI 商品上新，筛选口径：品类=茵曼服装，年份=2026，季节=秋季，渠道=线上，类目=全部，款号/订货会为空，首次上新未勾选</p>
               </div>
-              <span id="resultCount">0 款</span>
+              <div class="product-view-tools">
+                <span id="resultCount">0 款</span>
+                <div class="density-toggle" role="group" aria-label="商品浏览密度">
+                  <button id="standardDensityButton" class="icon-button active" type="button" data-action="density-standard" title="标准浏览" aria-label="标准浏览">
+                    <i data-lucide="grid-2x2"></i>
+                  </button>
+                  <button id="compactDensityButton" class="icon-button" type="button" data-action="density-compact" title="紧凑浏览" aria-label="紧凑浏览">
+                    <i data-lucide="grid-3x3"></i>
+                  </button>
+                </div>
+              </div>
             </div>
             <div class="product-grid" id="productGrid"></div>
           </section>

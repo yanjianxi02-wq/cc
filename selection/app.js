@@ -61,6 +61,7 @@ const state = {
   currentRole: "guest",
   creatorProfile: null,
   authView: "creator",
+  productDensity: localStorage.getItem("inmanProductDensity") === "compact" ? "compact" : "standard",
   visibleLimit: 60,
   filters: {
     category: "全部",
@@ -97,6 +98,8 @@ const els = {
   quickAnalysis: document.getElementById("quickAnalysis"),
   fullAnalysis: document.getElementById("fullAnalysis"),
   resultCount: document.getElementById("resultCount"),
+  standardDensityButton: document.getElementById("standardDensityButton"),
+  compactDensityButton: document.getElementById("compactDensityButton"),
   categoryFilter: document.getElementById("categoryFilter"),
   levelFilter: document.getElementById("levelFilter"),
   priceFilter: document.getElementById("priceFilter"),
@@ -967,6 +970,11 @@ function renderProducts() {
   const list = filteredProducts();
   const visibleList = list.slice(0, state.visibleLimit);
   els.resultCount.textContent = `${list.length} 款`;
+  els.productGrid.classList.toggle("compact-density", state.productDensity === "compact");
+  els.standardDensityButton?.classList.toggle("active", state.productDensity === "standard");
+  els.compactDensityButton?.classList.toggle("active", state.productDensity === "compact");
+  els.standardDensityButton?.setAttribute("aria-pressed", String(state.productDensity === "standard"));
+  els.compactDensityButton?.setAttribute("aria-pressed", String(state.productDensity === "compact"));
   const cards = visibleList
     .map((product) => {
       const selected = state.selected.has(product.id);
@@ -1037,6 +1045,15 @@ function renderProducts() {
       : "";
   els.productGrid.innerHTML = cards + loadMore;
   refreshIcons();
+}
+
+function setProductDensity(density) {
+  const nextDensity = density === "compact" ? "compact" : "standard";
+  if (state.productDensity === nextDensity) return;
+  state.productDensity = nextDensity;
+  localStorage.setItem("inmanProductDensity", nextDensity);
+  if (nextDensity === "compact" && state.visibleLimit < 100) state.visibleLimit = 100;
+  renderProducts();
 }
 
 function renderSelected() {
@@ -2819,6 +2836,8 @@ document.addEventListener("click", (event) => {
   if (action === "approve-request") approveCreatorRequest(id);
   if (action === "reject-request") rejectCreatorRequest(id);
   if (action === "task-status") updateSelectionTaskStatus(id, actionButton.dataset.status);
+  if (action === "density-standard") setProductDensity("standard");
+  if (action === "density-compact") setProductDensity("compact");
   if (action === "load-more") {
     state.visibleLimit += 60;
     renderProducts();
