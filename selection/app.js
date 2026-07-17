@@ -42,11 +42,20 @@ const state = {
   brandSelectedSkus: new Set(),
   brandFrontPreviewVisible: false,
   brandFrontDraggingSku: "",
+  selectedDraggingId: "",
   adminSavingSku: "",
   productOverrides: new Map(),
   catalogSource: "cloud",
   productSummaryCollapsed: false,
   creatorRequests: [],
+  brandCreators: [],
+  brandTasks: [],
+  brandTaskProducts: [],
+  brandTaskAssignments: [],
+  brandTaskCreatorIds: new Set(),
+  creatorTasks: [],
+  activeTaskId: localStorage.getItem("inmanActiveTaskId") || "",
+  taskFeatureReady: false,
   currentSession: null,
   currentUser: null,
   currentRole: "guest",
@@ -95,6 +104,10 @@ const els = {
   stockFilter: document.getElementById("stockFilter"),
   searchInput: document.getElementById("searchInput"),
   statusStrip: document.getElementById("statusStrip"),
+  creatorTaskPanel: document.getElementById("creatorTaskPanel"),
+  creatorTaskHint: document.getElementById("creatorTaskHint"),
+  creatorTaskSelect: document.getElementById("creatorTaskSelect"),
+  creatorTaskMeta: document.getElementById("creatorTaskMeta"),
   brandFiltersPanel: document.getElementById("brandFiltersPanel"),
   brandCategoryFilter: document.getElementById("brandCategoryFilter"),
   brandLevelFilter: document.getElementById("brandLevelFilter"),
@@ -151,6 +164,15 @@ const els = {
   brandNewProductsFile: document.getElementById("brandNewProductsFile"),
   brandNewProductsButton: document.getElementById("brandNewProductsButton"),
   brandCatalogMeta: document.getElementById("brandCatalogMeta"),
+  brandTaskCount: document.getElementById("brandTaskCount"),
+  brandTaskTitle: document.getElementById("brandTaskTitle"),
+  brandTaskDueAt: document.getElementById("brandTaskDueAt"),
+  brandTaskRecommendedCount: document.getElementById("brandTaskRecommendedCount"),
+  brandTaskDescription: document.getElementById("brandTaskDescription"),
+  brandTaskSelectionHint: document.getElementById("brandTaskSelectionHint"),
+  brandTaskCreatorList: document.getElementById("brandTaskCreatorList"),
+  brandCreateTaskButton: document.getElementById("brandCreateTaskButton"),
+  brandTaskList: document.getElementById("brandTaskList"),
   brandImportFile: document.getElementById("brandImportFile"),
   brandImportButton: document.getElementById("brandImportButton"),
   brandProductSearch: document.getElementById("brandProductSearch"),
@@ -198,6 +220,293 @@ function renderCatalogMeta() {
   els.brandCatalogMeta.textContent = `当前${sourceText} ${productPool.length} 款，达人可见 ${visibleCount} 款${hiddenCount ? `，不可见 ${hiddenCount} 款` : ""}`;
 }
 
+function formatTaskDate(value) {
+  if (!value) return "未设置截止时间";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "未设置截止时间"
+    : date.toLocaleString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+}
+
+function activeCreatorTask() {
+  return state.creatorTasks.find((task) => task.id === state.activeTaskId) || null;
+}
+
+function resetCreatorSelection() {
+  state.selected.clear();
+  state.featured.clear();
+  state.intents.clear();
+  state.remarks.clear();
+  state.submitted = false;
+}
+
+function renderCreatorTaskPanel() {
+  if (!els.creatorTaskPanel) return;
+  const showPanel =
+    state.currentRole === "creator" && state.taskFeatureReady && state.view === "selection";
+  els.creatorTaskPanel.classList.toggle("hidden", !showPanel);
+  if (!showPanel) return;
+
+  if (!state.creatorTasks.length) {
+    els.creatorTaskHint.textContent = "当前没有可进行的选款任务，请联系品牌方分配。";
+    els.creatorTaskSelect.innerHTML = `<option value="">暂无任务</option>`;
+    els.creatorTaskSelect.disabled = true;
+    els.creatorTaskMeta.innerHTML = `<div class="empty">任务分配后，这里只会显示该任务指定的商品池。</div>`;
+    return;
+  }
+
+  const task = activeCreatorTask() || state.creatorTasks[0];
+  if (task.id !== state.activeTaskId) {
+    state.activeTaskId = task.id;
+    localStorage.setItem("inmanActiveTaskId", task.id);
+  }
+  els.creatorTaskHint.textContent = "商品池仅展示当前任务指定的可见商品。";
+  els.creatorTaskSelect.disabled = false;
+  els.creatorTaskSelect.innerHTML = state.creatorTasks
+    .map(
+      (item) =>
+        `<option value="${escapeHtml(item.id)}" ${item.id === task.id ? "selected" : ""}>${escapeHtml(item.title)}</option>`
+    )
+    .join("");
+  els.creatorTaskMeta.innerHTML = `
+    <span><b>${task.product_count || 0}</b> 款任务商品</span>
+    <span><b>${task.recommended_count || "-"}</b> 建议选款数</span>
+    <span>截止：<b>${formatTaskDate(task.due_at)}</b></span>
+    <span>${task.latest_submission_at ? `最近提交：${formatTaskDate(task.latest_submission_at)}` : "尚未提交"}</span>
+    ${task.description ? `<p>${escapeHtml(task.description)}</p>` : ""}
+  `;
+}
+
+function taskStatusLabel(status) {
+  return {
+    active: "进行中",
+    draft: "草稿",
+    closed: "已关闭",
+    archived: "已归档",
+  }[status] || status;
+}
+
+function renderBrandTaskManager() {
+  if (!els.brandTaskList || !els.brandTaskCreatorList) return;
+  const activeCreators = state.brandCreators.filter((creator) => creator.status === "active");
+  const selectedProductCount = [...state.brandSelectedSkus].filter((sku) => {
+    const product = productPool.find((item) => item.sku === sku);
+    return product && !product.hidden;
+  }).length;
+  const selectedCreatorCount = state.brandTaskCreatorIds.size;
+  const activeTaskCount = state.brandTasks.filter((task) => task.status === "active").length;
+
+  if (els.brandTaskCount) {
+    els.brandTaskCount.textContent = `${activeTaskCount} 个进行中`;
+  }
+  if (els.brandTaskSelectionHint) {
+    els.brandTaskSelectionHint.textContent = `已勾选 ${selectedProductCount} 款，已选择 ${selectedCreatorCount} 位达人`;
+  }
+  if (els.brandCreateTaskButton) {
+    els.brandCreateTaskButton.disabled =
+      !selectedProductCount || !selectedCreatorCount || Boolean(state.adminSavingSku);
+  }
+
+  els.brandTaskCreatorList.innerHTML = activeCreators.length
+    ? activeCreators
+        .map(
+          (creator) => `
+            <label class="task-creator-option">
+              <input type="checkbox" data-task-creator="${escapeHtml(creator.user_id)}" ${
+                state.brandTaskCreatorIds.has(creator.user_id) ? "checked" : ""
+              } />
+              <span>${escapeHtml(creator.creator_name)}</span>
+              <small>${escapeHtml(creator.email)}</small>
+            </label>
+          `
+        )
+        .join("")
+    : `<div class="empty">暂无已审核达人，请先在后台汇总完成账号审核。</div>`;
+
+  const productsByTask = state.brandTaskProducts.reduce((map, item) => {
+    map.set(item.task_id, (map.get(item.task_id) || 0) + 1);
+    return map;
+  }, new Map());
+  const assignmentsByTask = state.brandTaskAssignments.reduce((map, item) => {
+    map.set(item.task_id, (map.get(item.task_id) || 0) + 1);
+    return map;
+  }, new Map());
+  const submissionsByTask = state.adminSubmissions.reduce((map, item) => {
+    if (!item.task_id) return map;
+    map.set(item.task_id, (map.get(item.task_id) || 0) + 1);
+    return map;
+  }, new Map());
+
+  els.brandTaskList.innerHTML = state.brandTasks.length
+    ? state.brandTasks
+        .map(
+          (task) => `
+            <article class="task-list-item">
+              <div>
+                <strong>${escapeHtml(task.title)}</strong>
+                <small>${task.description ? escapeHtml(task.description) : "未填写任务说明"}</small>
+                <small>截止：${formatTaskDate(task.due_at)}</small>
+              </div>
+              <div class="task-list-stats">
+                <span>${productsByTask.get(task.id) || 0} 款</span>
+                <span>${assignmentsByTask.get(task.id) || 0} 位达人</span>
+                <span>${submissionsByTask.get(task.id) || 0} 次提交</span>
+              </div>
+              <div class="task-list-actions">
+                <span class="task-status status-${escapeHtml(task.status)}">${taskStatusLabel(task.status)}</span>
+                <button class="ghost-button" data-action="task-status" data-id="${escapeHtml(task.id)}" data-status="${
+                  task.status === "active" ? "closed" : "active"
+                }" type="button">${task.status === "active" ? "关闭任务" : "重新开启"}</button>
+              </div>
+            </article>
+          `
+        )
+        .join("")
+    : `<div class="empty">尚未创建选款任务。勾选货品、选择达人后即可创建。</div>`;
+}
+
+async function loadBrandTaskData(options = {}) {
+  if (!cloudEnabled || state.currentRole !== "brand") return false;
+  const [tasksResult, productsResult, assignmentsResult, creatorsResult] = await Promise.all([
+    cloud.from("selection_tasks").select("*").order("created_at", { ascending: false }).limit(200),
+    cloud.from("selection_task_products").select("task_id, sku").limit(10000),
+    cloud.from("selection_task_assignments").select("task_id, creator_user_id").limit(10000),
+    cloud
+      .from("creator_profiles")
+      .select("user_id, creator_name, email, status")
+      .order("creator_name", { ascending: true })
+      .limit(500),
+  ]);
+  const error = tasksResult.error || productsResult.error || assignmentsResult.error || creatorsResult.error;
+  if (error) {
+    console.error(error);
+    state.brandTasks = [];
+    state.brandTaskProducts = [];
+    state.brandTaskAssignments = [];
+    state.brandCreators = [];
+    if (!options.silent) showToast("选款任务尚未升级到云端");
+    renderBrandTaskManager();
+    return false;
+  }
+  state.brandTasks = tasksResult.data || [];
+  state.brandTaskProducts = productsResult.data || [];
+  state.brandTaskAssignments = assignmentsResult.data || [];
+  state.brandCreators = creatorsResult.data || [];
+  state.brandTaskCreatorIds = new Set(
+    [...state.brandTaskCreatorIds].filter((id) => state.brandCreators.some((creator) => creator.user_id === id && creator.status === "active"))
+  );
+  renderBrandTaskManager();
+  return true;
+}
+
+async function loadCreatorTasks(options = {}) {
+  if (!cloudEnabled || state.currentRole !== "creator") return false;
+  const { data, error } = await cloud.rpc("get_creator_selection_tasks");
+  if (error) {
+    console.error(error);
+    state.taskFeatureReady = false;
+    state.creatorTasks = [];
+    state.activeTaskId = "";
+    renderCreatorTaskPanel();
+    if (!options.silent) showToast("任务服务暂不可用，已回退到原商品池");
+    return false;
+  }
+  state.taskFeatureReady = true;
+  state.creatorTasks = data || [];
+  if (!state.creatorTasks.some((task) => task.id === state.activeTaskId)) {
+    state.activeTaskId = state.creatorTasks[0]?.id || "";
+    if (state.activeTaskId) localStorage.setItem("inmanActiveTaskId", state.activeTaskId);
+    else localStorage.removeItem("inmanActiveTaskId");
+  }
+  renderCreatorTaskPanel();
+  return true;
+}
+
+async function createSelectionTask() {
+  if (!cloudEnabled || state.currentRole !== "brand") return;
+  const title = String(els.brandTaskTitle?.value || "").trim();
+  const creatorIds = [...state.brandTaskCreatorIds];
+  const skus = [...state.brandSelectedSkus].filter((sku) => {
+    const product = productPool.find((item) => item.sku === sku);
+    return product && !product.hidden;
+  });
+  const recommendedRaw = String(els.brandTaskRecommendedCount?.value || "").trim();
+  const recommendedCount = recommendedRaw ? Number(recommendedRaw) : null;
+  const dueInput = els.brandTaskDueAt?.value || "";
+  const dueAt = dueInput ? new Date(dueInput).toISOString() : null;
+
+  if (!title) {
+    els.brandTaskTitle?.focus();
+    showToast("请填写任务名称");
+    return;
+  }
+  if (!skus.length) {
+    showToast("请先在商品池勾选要外发的款式");
+    return;
+  }
+  if (!creatorIds.length) {
+    showToast("请至少选择一位已审核达人");
+    return;
+  }
+  if (recommendedCount != null && (!Number.isInteger(recommendedCount) || recommendedCount < 1 || recommendedCount > 200)) {
+    showToast("建议选款数请输入 1-200 的整数");
+    return;
+  }
+  if (dueInput && Number.isNaN(new Date(dueInput).getTime())) {
+    showToast("截止时间格式不正确");
+    return;
+  }
+
+  state.adminSavingSku = "task";
+  renderBrandTaskManager();
+  const { error } = await cloud.rpc("create_selection_task", {
+    p_title: title,
+    p_description: String(els.brandTaskDescription?.value || "").trim(),
+    p_due_at: dueAt,
+    p_recommended_count: recommendedCount,
+    p_creator_user_ids: creatorIds,
+    p_skus: skus,
+  });
+  state.adminSavingSku = "";
+  if (error) {
+    console.error(error);
+    showToast("任务创建失败，请确认云端任务迁移已执行");
+    renderBrandTaskManager();
+    return;
+  }
+  state.brandSelectedSkus.clear();
+  state.brandTaskCreatorIds.clear();
+  if (els.brandTaskTitle) els.brandTaskTitle.value = "";
+  if (els.brandTaskDueAt) els.brandTaskDueAt.value = "";
+  if (els.brandTaskRecommendedCount) els.brandTaskRecommendedCount.value = "";
+  if (els.brandTaskDescription) els.brandTaskDescription.value = "";
+  showToast(`已创建任务并分配给 ${creatorIds.length} 位达人`);
+  await Promise.all([loadBrandTaskData({ silent: true }), loadAdminData()]);
+  renderBrandProductEditor();
+}
+
+async function updateSelectionTaskStatus(taskId, status) {
+  if (!cloudEnabled || state.currentRole !== "brand") return;
+  const { error } = await cloud
+    .from("selection_tasks")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", taskId);
+  if (error) {
+    console.error(error);
+    showToast("任务状态更新失败");
+    return;
+  }
+  showToast(status === "closed" ? "任务已关闭，达人将无法继续访问该任务" : "任务已重新开启");
+  await loadBrandTaskData({ silent: true });
+}
+
 function refreshProductViews() {
   applyProductOverrides();
   pruneHiddenSelections();
@@ -206,6 +515,8 @@ function refreshProductViews() {
   renderSelected();
   renderAdmin();
   renderBrandProductEditor();
+  renderBrandTaskManager();
+  renderCreatorTaskPanel();
   renderCatalogMeta();
 }
 
@@ -741,7 +1052,8 @@ function renderSelected() {
     els.selectedDrawer.innerHTML = selectedProducts
       .map(
         (product) => `
-          <div class="selected-item">
+          <div class="selected-item" data-selected-id="${product.id}" draggable="true">
+            <span class="selected-drag-handle" title="拖拽调整选款顺序" aria-label="拖拽调整选款顺序"><i data-lucide="grip-vertical"></i></span>
             <img src="${product.img}" alt="${product.name}" />
             <div>
               <strong>${product.name}${state.featured.has(product.id) ? ` <span class="featured-label">重点款</span>` : ""}</strong>
@@ -758,7 +1070,8 @@ function renderSelected() {
     els.selectedTable.innerHTML = selectedProducts
       .map(
         (product) => `
-          <div class="selected-row">
+          <div class="selected-row" data-selected-id="${product.id}" draggable="true">
+            <span class="selected-drag-handle" title="拖拽调整选款顺序" aria-label="拖拽调整选款顺序"><i data-lucide="grip-vertical"></i></span>
             <img src="${product.img}" alt="${product.name}" />
             <div>
               <strong>${product.name} <span class="sku">${product.sku}</span>${state.featured.has(product.id) ? ` <span class="featured-label">重点款</span>` : ""}</strong>
@@ -930,6 +1243,7 @@ function renderBrandBatchState(visibleSkus = []) {
     els.brandSelectAll.checked = Boolean(selectable.length && selectedInView === selectable.length);
     els.brandSelectAll.indeterminate = Boolean(selectedInView && selectedInView < selectable.length);
   }
+  renderBrandTaskManager();
 }
 
 function renderBrandFrontQueue() {
@@ -1199,6 +1513,7 @@ function setView(view) {
   if (els.statusStrip) {
     els.statusStrip.classList.toggle("hidden", view === "brand");
   }
+  renderCreatorTaskPanel();
   if (view !== "selection") {
     document.querySelector(".content-grid").classList.add("hidden");
   } else {
@@ -1247,9 +1562,23 @@ async function submitSelection() {
     .forEach((button) => (button.disabled = true));
   showToast("正在提交选款...");
 
-  const { error } = await cloud.rpc("submit_selection", {
-    p_items: selectionPayload(),
-  });
+  const task = activeCreatorTask();
+  if (state.taskFeatureReady && !task) {
+    state.submitting = false;
+    document
+      .querySelectorAll("#submitTopButton, #submitDrawerButton, #submitListButton")
+      .forEach((button) => (button.disabled = false));
+    showToast("请先选择品牌方分配的选款任务");
+    return;
+  }
+  const { error } = state.taskFeatureReady
+    ? await cloud.rpc("submit_task_selection", {
+        p_task_id: task.id,
+        p_items: selectionPayload(),
+      })
+    : await cloud.rpc("submit_selection", {
+        p_items: selectionPayload(),
+      });
 
   state.submitting = false;
   document
@@ -1263,6 +1592,7 @@ async function submitSelection() {
 
   state.submitted = true;
   renderSelected();
+  if (state.taskFeatureReady) await loadCreatorTasks({ silent: true });
   showToast(`已成功提交 ${state.selected.size} 款`);
 }
 
@@ -1304,6 +1634,12 @@ async function syncAccessSession() {
     }
     state.creatorProfile = null;
     state.creatorRequests = [];
+    state.brandTasks = [];
+    state.brandTaskProducts = [];
+    state.brandTaskAssignments = [];
+    state.brandCreators = [];
+    state.creatorTasks = [];
+    state.taskFeatureReady = false;
     setRoleUi("guest");
     setAppVisibility(false);
     setAdminLoggedIn(false);
@@ -1318,7 +1654,11 @@ async function syncAccessSession() {
     setAppVisibility(true);
     setAdminLoggedIn(true);
     await loadProductCatalog({ silent: true });
-    await Promise.all([loadAdminData(), loadProductOverrides({ silent: true })]);
+    await Promise.all([
+      loadAdminData(),
+      loadProductOverrides({ silent: true }),
+      loadBrandTaskData({ silent: true }),
+    ]);
     subscribeAdminRealtime();
     renderBrandProductEditor();
     return;
@@ -1352,6 +1692,7 @@ async function syncAccessSession() {
   els.userDisplayRole.textContent = "达人账号";
   setAppVisibility(true);
   setAdminLoggedIn(false);
+  await loadCreatorTasks({ silent: true });
   await loadProductCatalog({ silent: true });
   await loadProductOverrides({ silent: true });
   renderProducts();
@@ -1490,6 +1831,15 @@ async function logoutCurrentUser() {
   state.adminSubmissions = [];
   state.adminItems = [];
   state.creatorRequests = [];
+  state.brandTasks = [];
+  state.brandTaskProducts = [];
+  state.brandTaskAssignments = [];
+  state.brandCreators = [];
+  state.brandTaskCreatorIds.clear();
+  state.creatorTasks = [];
+  state.taskFeatureReady = false;
+  state.activeTaskId = "";
+  resetCreatorSelection();
   setAdminLoggedIn(false);
   setRoleUi("guest");
   setAppVisibility(false);
@@ -1527,6 +1877,7 @@ async function loadAdminData() {
   state.adminItems = items || [];
   state.creatorRequests = requests || [];
   renderAdmin();
+  renderBrandTaskManager();
 }
 
 function normalizeCatalogDate(value) {
@@ -1589,9 +1940,15 @@ async function loadProductCatalog(options = {}) {
     renderCatalogMeta();
     return;
   }
+  if (state.currentRole === "creator" && state.taskFeatureReady && !state.activeTaskId) {
+    replaceBaseProductPool([], "cloud");
+    return;
+  }
   const productRequest =
     state.currentRole === "creator"
-      ? cloud.rpc("get_creator_visible_products")
+      ? state.taskFeatureReady
+        ? cloud.rpc("get_creator_task_products", { p_task_id: state.activeTaskId })
+        : cloud.rpc("get_creator_visible_products")
       : cloud
           .from("product_catalog")
           .select("*")
@@ -1601,14 +1958,23 @@ async function loadProductCatalog(options = {}) {
   const { data, error } = await productRequest;
   if (error) {
     console.error(error);
-    if (!options.silent) showToast("云端新品池读取失败，将继续使用本地商品池");
+    if (state.currentRole === "creator" && state.taskFeatureReady) {
+      replaceBaseProductPool([], "cloud");
+    }
+    if (!options.silent) {
+      showToast(
+        state.currentRole === "creator" && state.taskFeatureReady
+          ? "任务商品池读取失败，请重新选择任务"
+          : "云端新品池读取失败，将继续使用本地商品池"
+      );
+    }
     renderCatalogMeta();
     return;
   }
   const rows = data || [];
   if (!rows.length) {
     state.catalogSource = "cloud";
-    refreshProductViews();
+    replaceBaseProductPool([], "cloud");
     return;
   }
   const products = rows.map(productFromCatalogRow).filter((product) => product.sku);
@@ -1695,6 +2061,11 @@ function subscribeAdminRealtime() {
       "postgres_changes",
       { event: "*", schema: "public", table: "creator_access_requests" },
       loadAdminData
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "selection_tasks" },
+      () => loadBrandTaskData({ silent: true })
     )
     .subscribe();
 }
@@ -2447,6 +2818,7 @@ document.addEventListener("click", (event) => {
   if (action === "front-remove") removeProductFromFront(id);
   if (action === "approve-request") approveCreatorRequest(id);
   if (action === "reject-request") rejectCreatorRequest(id);
+  if (action === "task-status") updateSelectionTaskStatus(id, actionButton.dataset.status);
   if (action === "load-more") {
     state.visibleLimit += 60;
     renderProducts();
@@ -2454,43 +2826,78 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("dragstart", (event) => {
-  const item = event.target.closest("[data-front-sku]");
-  if (!item) return;
-  state.brandFrontDraggingSku = item.dataset.frontSku;
-  item.classList.add("dragging");
-  event.dataTransfer?.setData("text/plain", state.brandFrontDraggingSku);
+  const frontItem = event.target.closest("[data-front-sku]");
+  if (frontItem) {
+    state.brandFrontDraggingSku = frontItem.dataset.frontSku;
+    frontItem.classList.add("dragging");
+    event.dataTransfer?.setData("text/plain", state.brandFrontDraggingSku);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    return;
+  }
+  const selectedItem = event.target.closest("[data-selected-id]");
+  if (!selectedItem || !state.selected.has(selectedItem.dataset.selectedId)) return;
+  state.selectedDraggingId = selectedItem.dataset.selectedId;
+  selectedItem.classList.add("dragging");
+  event.dataTransfer?.setData("text/plain", state.selectedDraggingId);
   if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
 });
 
 document.addEventListener("dragover", (event) => {
-  const item = event.target.closest("[data-front-sku]");
-  if (!item || !state.brandFrontDraggingSku || item.dataset.frontSku === state.brandFrontDraggingSku) return;
+  const frontItem = event.target.closest("[data-front-sku]");
+  if (frontItem && state.brandFrontDraggingSku && frontItem.dataset.frontSku !== state.brandFrontDraggingSku) {
+    event.preventDefault();
+    frontItem.classList.add("drag-over");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+  const selectedItem = event.target.closest("[data-selected-id]");
+  if (!selectedItem || !state.selectedDraggingId || selectedItem.dataset.selectedId === state.selectedDraggingId) return;
   event.preventDefault();
-  item.classList.add("drag-over");
+  selectedItem.classList.add("drag-over");
   if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
 });
 
 document.addEventListener("dragleave", (event) => {
-  const item = event.target.closest("[data-front-sku]");
-  item?.classList.remove("drag-over");
+  event.target.closest("[data-front-sku]")?.classList.remove("drag-over");
+  event.target.closest("[data-selected-id]")?.classList.remove("drag-over");
 });
 
 document.addEventListener("drop", async (event) => {
   const item = event.target.closest("[data-front-sku]");
   const draggingSku = state.brandFrontDraggingSku;
-  if (!item || !draggingSku || item.dataset.frontSku === draggingSku) return;
+  if (item && draggingSku && item.dataset.frontSku !== draggingSku) {
+    event.preventDefault();
+    const queue = getBrandFrontQueue().map((product) => product.sku);
+    const nextQueue = queue.filter((sku) => sku !== draggingSku);
+    const targetIndex = nextQueue.indexOf(item.dataset.frontSku);
+    nextQueue.splice(Math.max(targetIndex, 0), 0, draggingSku);
+    state.brandFrontDraggingSku = "";
+    await persistBrandFrontQueue(nextQueue, "前排推荐顺序已更新");
+    return;
+  }
+  const selectedItem = event.target.closest("[data-selected-id]");
+  const draggingId = state.selectedDraggingId;
+  if (!selectedItem || !draggingId || selectedItem.dataset.selectedId === draggingId) return;
   event.preventDefault();
-  const queue = getBrandFrontQueue().map((product) => product.sku);
-  const nextQueue = queue.filter((sku) => sku !== draggingSku);
-  const targetIndex = nextQueue.indexOf(item.dataset.frontSku);
-  nextQueue.splice(Math.max(targetIndex, 0), 0, draggingSku);
-  state.brandFrontDraggingSku = "";
-  await persistBrandFrontQueue(nextQueue, "前排推荐顺序已更新");
+  const entries = [...state.selected.entries()].filter(([id]) => id !== draggingId);
+  const targetIndex = entries.findIndex(([id]) => id === selectedItem.dataset.selectedId);
+  const draggedProduct = state.selected.get(draggingId);
+  if (!draggedProduct || targetIndex < 0) return;
+  entries.splice(targetIndex, 0, [draggingId, draggedProduct]);
+  state.selected = new Map(entries);
+  state.selectedDraggingId = "";
+  state.submitted = false;
+  renderSelected();
+  showToast("已调整已选商品顺序");
 });
 
 document.addEventListener("dragend", () => {
   state.brandFrontDraggingSku = "";
+  state.selectedDraggingId = "";
   document.querySelectorAll(".front-queue-item").forEach((item) => {
+    item.classList.remove("dragging", "drag-over");
+  });
+  document.querySelectorAll("[data-selected-id]").forEach((item) => {
     item.classList.remove("dragging", "drag-over");
   });
 });
@@ -2499,6 +2906,13 @@ document.addEventListener("change", (event) => {
   const intentId = event.target.dataset.intent;
   const remarkId = event.target.dataset.remark;
   const brandSelectSku = event.target.dataset.brandSelect;
+  const taskCreatorId = event.target.dataset.taskCreator;
+  if (taskCreatorId) {
+    if (event.target.checked) state.brandTaskCreatorIds.add(taskCreatorId);
+    else state.brandTaskCreatorIds.delete(taskCreatorId);
+    renderBrandTaskManager();
+    return;
+  }
   if (brandSelectSku) {
     if (event.target.checked) {
       state.brandSelectedSkus.add(brandSelectSku);
@@ -2576,6 +2990,18 @@ if (els.stockFilter) {
     state.filters.stock = event.target.value;
     state.visibleLimit = 60;
     renderProducts();
+  });
+}
+
+if (els.creatorTaskSelect) {
+  els.creatorTaskSelect.addEventListener("change", async (event) => {
+    const nextTaskId = event.target.value;
+    if (!nextTaskId || nextTaskId === state.activeTaskId) return;
+    state.activeTaskId = nextTaskId;
+    localStorage.setItem("inmanActiveTaskId", nextTaskId);
+    resetCreatorSelection();
+    renderCreatorTaskPanel();
+    await loadProductCatalog();
   });
 }
 
@@ -2702,6 +3128,9 @@ if (els.brandImportButton) {
 }
 if (els.brandNewProductsButton) {
   els.brandNewProductsButton.addEventListener("click", importNewProducts);
+}
+if (els.brandCreateTaskButton) {
+  els.brandCreateTaskButton.addEventListener("click", createSelectionTask);
 }
 if (els.productSummaryToggle) {
   els.productSummaryToggle.addEventListener("click", () => {

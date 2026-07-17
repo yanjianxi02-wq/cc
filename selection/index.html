@@ -182,6 +182,20 @@
           </div>
         </section>
 
+        <section class="creator-task-panel hidden" id="creatorTaskPanel">
+          <div class="task-panel-head">
+            <div>
+              <h2>我的选款任务</h2>
+              <p id="creatorTaskHint">品牌方为你分配任务后会显示在这里</p>
+            </div>
+            <label class="task-select-field">
+              <span>当前任务</span>
+              <select id="creatorTaskSelect"></select>
+            </label>
+          </div>
+          <div class="creator-task-meta" id="creatorTaskMeta"></div>
+        </section>
+
         <section class="filters hidden" data-view-panel="brand" id="brandFiltersPanel">
           <div class="section-head compact-head">
             <div>
@@ -461,6 +475,45 @@
           </div>
 
           <div class="hidden" id="brandDashboard">
+            <div class="admin-card task-manager-card">
+              <div class="editor-head">
+                <div>
+                  <h3>选款任务</h3>
+                  <p>先在下方商品池勾选款式，再把任务分配给已审核的达人。</p>
+                </div>
+                <span class="task-manager-count" id="brandTaskCount">0 个进行中</span>
+              </div>
+              <div class="task-create-grid">
+                <label>
+                  <span>任务名称</span>
+                  <input id="brandTaskTitle" maxlength="80" placeholder="例如：秋季首场选款" />
+                </label>
+                <label>
+                  <span>截止时间</span>
+                  <input id="brandTaskDueAt" type="datetime-local" />
+                </label>
+                <label>
+                  <span>建议选款数</span>
+                  <input id="brandTaskRecommendedCount" type="number" min="1" max="200" placeholder="例如：20" />
+                </label>
+                <label class="task-description-field">
+                  <span>任务说明</span>
+                  <input id="brandTaskDescription" maxlength="500" placeholder="例如：优先选择适合直播挂车的款式" />
+                </label>
+              </div>
+              <div class="task-assignment-head">
+                <strong>分配达人</strong>
+                <small id="brandTaskSelectionHint">先在下方商品池勾选款式</small>
+              </div>
+              <div class="task-creator-list" id="brandTaskCreatorList"></div>
+              <div class="task-create-actions">
+                <button class="primary-button" id="brandCreateTaskButton" type="button">
+                  <i data-lucide="send"></i><span>创建并外发任务</span>
+                </button>
+              </div>
+              <div class="task-list" id="brandTaskList"></div>
+            </div>
+
             <div class="admin-card catalog-update-card">
               <div class="editor-head">
                 <div>
