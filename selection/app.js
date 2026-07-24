@@ -715,8 +715,13 @@ function readFileAsDataUrl(file) {
   });
 }
 
+const BRAND_ADMIN_EMAILS = new Set([
+  "yanjianxi02@gmail.com",
+  "huangshaoqing@inman.cc",
+]);
+
 function isAdminEmail(email) {
-  return String(email || "").toLowerCase() === "yanjianxi02@gmail.com";
+  return BRAND_ADMIN_EMAILS.has(String(email || "").trim().toLowerCase());
 }
 
 function setAuthView(view) {
@@ -1750,7 +1755,7 @@ async function loginAdmin(source = "admin") {
     showToast("请输入密码");
     return;
   }
-  if (email.toLowerCase() !== "yanjianxi02@gmail.com") {
+  if (!isAdminEmail(email)) {
     showToast("该邮箱没有后台权限");
     return;
   }

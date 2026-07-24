@@ -10,7 +10,10 @@ stable
 security definer
 set search_path = public
 as $$
-  select coalesce(auth.jwt() ->> 'email', '') = 'yanjianxi02@gmail.com';
+  select lower(coalesce(auth.jwt() ->> 'email', '')) in (
+    'yanjianxi02@gmail.com',
+    'huangshaoqing@inman.cc'
+  );
 $$;
 
 revoke all on function public.is_brand_admin() from public;
