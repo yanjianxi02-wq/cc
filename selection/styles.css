@@ -1283,30 +1283,118 @@ textarea:focus {
   color: var(--muted);
 }
 
-.collapse-toggle {
-  width: 100%;
-  border: 0;
-  padding: 0;
-  background: transparent;
+.admin-submission-card {
+  grid-column: 1 / -1;
+}
+
+.admin-submission-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.admin-submission-head h3 {
+  margin: 0;
+}
+
+.admin-submission-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.admin-submission-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.admin-submission-filters label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-submission-filters input {
+  width: 145px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+.submission-row-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+}
+
+.compact-action {
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.submission-detail {
+  display: grid;
+  gap: 16px;
+}
+
+.submission-detail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.submission-detail-item {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.submission-detail-item strong,
+.submission-detail-item small {
+  display: block;
+}
+
+.submission-detail-item small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.submission-detail-item p {
+  margin: 8px 0 0;
   color: var(--ink);
+}
+
+.submission-order {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--green-dark);
+  background: var(--soft-green);
   font-weight: 800;
-  text-align: left;
 }
 
-.collapse-toggle span {
-  font-size: 16px;
-}
-
-.collapsed-card {
-  padding-bottom: 14px;
-}
-
-#productSummaryPanel {
-  margin-top: 12px;
+.submission-intent {
+  display: inline-flex;
+  margin: 8px 0 0;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--green-dark);
+  background: var(--soft-green);
+  font-size: 12px;
 }
 
 .admin-editor-card {
@@ -3108,6 +3196,23 @@ textarea:focus {
   .task-create-actions .primary-button {
     width: 100%;
   }
+
+  .admin-submission-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-submission-filters {
+    width: 100%;
+  }
+
+  .admin-submission-filters label {
+    flex: 1 1 150px;
+  }
+
+  .admin-submission-filters input {
+    width: 100%;
+  }
 }
 
 @media (max-width: 480px) {
@@ -3131,5 +3236,13 @@ textarea:focus {
 
   .compass-definition-list dd {
     text-align: left;
+  }
+
+  .admin-submission-filters .ghost-button {
+    width: 100%;
+  }
+
+  .submission-row-actions {
+    justify-content: space-between;
   }
 }
