@@ -2065,6 +2065,69 @@ textarea:focus {
   margin-bottom: 14px;
 }
 
+.account-scope-card {
+  margin-bottom: 14px;
+}
+
+.account-scope-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.45fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.account-scope-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.account-scope-row:last-child {
+  padding-bottom: 0;
+}
+
+.account-creator-main,
+.account-scope-main {
+  display: grid;
+  gap: 5px;
+}
+
+.account-creator-main strong,
+.account-scope-main strong {
+  color: var(--ink);
+}
+
+.account-creator-main small,
+.account-scope-main small {
+  color: var(--muted);
+}
+
+.account-creator-main .request-status {
+  width: fit-content;
+  margin-top: 2px;
+}
+
+.account-task-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.account-task-tags span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #cfe6dd;
+  border-radius: 6px;
+  background: var(--soft-green);
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .request-head {
   display: flex;
   align-items: start;
@@ -3054,6 +3117,11 @@ textarea:focus {
   .task-list-item {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .account-scope-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 }
 
