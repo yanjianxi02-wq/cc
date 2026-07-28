@@ -28,6 +28,10 @@ const state = {
   creatorName: localStorage.getItem("inmanCreatorName") || "",
   adminSubmissions: [],
   adminItems: [],
+  adminSubmissionFilters: {
+    dateFrom: "",
+    dateTo: "",
+  },
   adminChannel: null,
   brandProductSearch: "",
   brandFilters: {
@@ -47,7 +51,6 @@ const state = {
   adminSavingSku: "",
   productOverrides: new Map(),
   catalogSource: "cloud",
-  productSummaryCollapsed: false,
   creatorRequests: [],
   brandCreators: [],
   brandTasks: [],
@@ -154,8 +157,11 @@ const els = {
   adminSelected: document.getElementById("adminSelected"),
   adminHotCategory: document.getElementById("adminHotCategory"),
   pendingRequestCount: document.getElementById("pendingRequestCount"),
-  productSummary: document.getElementById("productSummary"),
   creatorSummary: document.getElementById("creatorSummary"),
+  creatorSummaryMeta: document.getElementById("creatorSummaryMeta"),
+  adminSubmissionDateFrom: document.getElementById("adminSubmissionDateFrom"),
+  adminSubmissionDateTo: document.getElementById("adminSubmissionDateTo"),
+  adminSubmissionFilterReset: document.getElementById("adminSubmissionFilterReset"),
   creatorRequestSummary: document.getElementById("creatorRequestSummary"),
   adminLoginPanel: document.getElementById("adminLoginPanel"),
   adminDashboard: document.getElementById("adminDashboard"),
@@ -165,9 +171,6 @@ const els = {
   adminLogoutButton: document.getElementById("adminLogoutButton"),
   adminRefreshButton: document.getElementById("adminRefreshButton"),
   adminExportButton: document.getElementById("adminExportButton"),
-  productSummaryCard: document.getElementById("productSummaryCard"),
-  productSummaryPanel: document.getElementById("productSummaryPanel"),
-  productSummaryToggle: document.getElementById("productSummaryToggle"),
   compassRefreshButton: document.getElementById("compassRefreshButton"),
   compassCreatorQuery: document.getElementById("compassCreatorQuery"),
   compassTaskFilter: document.getElementById("compassTaskFilter"),
@@ -1240,62 +1243,30 @@ function renderAdmin() {
   const hotCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0];
   els.adminHotCategory.textContent = hotCategory ? hotCategory[0] : "-";
 
-  const productCounts = state.adminItems.reduce((acc, item) => {
-    if (!acc[item.sku]) {
-      acc[item.sku] = {
-        ...item,
-        count: 0,
-        featuredCount: 0,
-      };
-    }
-    acc[item.sku].count += 1;
-    if (item.is_featured) acc[item.sku].featuredCount += 1;
-    return acc;
-  }, {});
+  const dateFrom = state.adminSubmissionFilters.dateFrom
+    ? new Date(`${state.adminSubmissionFilters.dateFrom}T00:00:00`)
+    : null;
+  const dateTo = state.adminSubmissionFilters.dateTo
+    ? new Date(`${state.adminSubmissionFilters.dateTo}T23:59:59.999`)
+    : null;
+  const filteredSubmissions = state.adminSubmissions.filter((submission) => {
+    const submittedAt = new Date(submission.submitted_at);
+    return (!dateFrom || submittedAt >= dateFrom) && (!dateTo || submittedAt <= dateTo);
+  });
 
-  const rankedProducts = Object.values(productCounts).sort(
-    (a, b) => b.featuredCount - a.featuredCount || b.count - a.count
-  );
+  if (els.adminSubmissionDateFrom) els.adminSubmissionDateFrom.value = state.adminSubmissionFilters.dateFrom;
+  if (els.adminSubmissionDateTo) els.adminSubmissionDateTo.value = state.adminSubmissionFilters.dateTo;
+  if (els.creatorSummaryMeta) {
+    const rangeText = [state.adminSubmissionFilters.dateFrom, state.adminSubmissionFilters.dateTo]
+      .filter(Boolean)
+      .join(" 至 ");
+    els.creatorSummaryMeta.textContent = rangeText
+      ? `${rangeText} · ${filteredSubmissions.length} 次提交`
+      : `全部记录 · ${filteredSubmissions.length} 次提交`;
+  }
 
-  const compassHeatItems = compassArray(state.compassProductHeatData?.items);
-  els.productSummary.innerHTML = compassHeatItems.length
-    ? compassHeatItems
-        .slice(0, 100)
-        .map(
-          (item) => `
-            <div class="summary-row">
-              <div>
-                <strong>${escapeHtml(item.product_name)} ${escapeHtml(item.sku)}
-                  ${compassArray(item.labels).map((label) => `<span class="featured-label" title="${escapeHtml(label.reason || "")}">${escapeHtml(label.tag || "")}</span>`).join("")}
-                </strong>
-                <small>${escapeHtml(item.category || "未标注")} · ${escapeHtml(item.plan_level || "未标注")} · 分配 ${compassNumber(item.assigned_creator_count)} 人 · 选择率 ${compassRate(item.selection_rate)}</small>
-              </div>
-              <strong>${compassNumber(item.selected_creator_count)} 人选择</strong>
-            </div>
-          `
-        )
-        .join("")
-    : rankedProducts.length
-      ? rankedProducts
-          .slice(0, 100)
-          .map(
-            (item) => `
-              <div class="summary-row">
-                <div>
-                  <strong>${escapeHtml(item.product_name)} ${escapeHtml(item.sku)}
-                    ${item.featuredCount ? `<span class="featured-label">${item.featuredCount}人重点</span>` : ""}
-                  </strong>
-                  <small>${escapeHtml(item.category)} · ${escapeHtml(item.plan_level || "未标注")}级</small>
-                </div>
-                <strong>${item.count}人选择</strong>
-              </div>
-            `
-          )
-          .join("")
-      : `<div class="empty">暂无云端选款记录</div>`;
-
-  els.creatorSummary.innerHTML = state.adminSubmissions.length
-    ? state.adminSubmissions
+  els.creatorSummary.innerHTML = filteredSubmissions.length
+    ? filteredSubmissions
         .map(
           (submission) => `
             <div class="summary-row">
@@ -1303,12 +1274,15 @@ function renderAdmin() {
                 <strong>${escapeHtml(submission.creator_name)}</strong>
                 <small>${new Date(submission.submitted_at).toLocaleString("zh-CN")}</small>
               </div>
-              <strong>${submission.item_count} 款</strong>
+              <div class="submission-row-actions">
+                <strong>${submission.item_count} 款</strong>
+                <button class="ghost-button compact-action" data-action="view-submission" data-id="${escapeHtml(submission.id)}" type="button">查看明细</button>
+              </div>
             </div>
           `
         )
         .join("")
-    : `<div class="empty">暂无达人提交记录</div>`;
+    : `<div class="empty">当前日期范围暂无达人提交记录</div>`;
 
   els.creatorRequestSummary.innerHTML = state.creatorRequests.length
     ? state.creatorRequests
@@ -1335,17 +1309,47 @@ function renderAdmin() {
         .join("")
     : `<div class="empty">暂无达人开户申请</div>`;
 
-  renderProductSummaryCollapse();
 }
 
-function renderProductSummaryCollapse() {
-  if (!els.productSummaryPanel || !els.productSummaryToggle || !els.productSummaryCard) return;
-  els.productSummaryPanel.classList.toggle("hidden", state.productSummaryCollapsed);
-  els.productSummaryCard.classList.toggle("collapsed-card", state.productSummaryCollapsed);
-  const label = els.productSummaryToggle.querySelector("span");
-  if (label) label.textContent = "商品热度汇总";
-  const icon = els.productSummaryToggle.querySelector("i");
-  if (icon) icon.setAttribute("data-lucide", state.productSummaryCollapsed ? "chevron-down" : "chevron-up");
+function openSubmissionDetail(submissionId) {
+  const submission = state.adminSubmissions.find((item) => item.id === submissionId);
+  if (!submission) {
+    showToast("未找到该次提交");
+    return;
+  }
+
+  const items = state.adminItems
+    .filter((item) => item.submission_id === submission.id)
+    .sort((a, b) => (a.selection_order || 0) - (b.selection_order || 0));
+
+  els.detailContent.innerHTML = `
+    <div class="submission-detail">
+      <div class="detail-head">
+        <div>
+          <p class="eyebrow">达人提交明细</p>
+          <h2>${escapeHtml(submission.creator_name)}</h2>
+          <p>${new Date(submission.submitted_at).toLocaleString("zh-CN")} · 共 ${submission.item_count} 款</p>
+        </div>
+      </div>
+      <div class="submission-detail-list">
+        ${items.length
+          ? items.map((item, index) => `
+              <article class="submission-detail-item">
+                <span class="submission-order">${item.selection_order || index + 1}</span>
+                <div>
+                  <strong>${escapeHtml(item.product_name || "商品")} ${escapeHtml(item.sku || "")}</strong>
+                  <small>${escapeHtml(item.category || "未标注")} · ¥${normalizePriceValue(item.price) ?? "-"} · ${escapeHtml(item.style || "未标注")}</small>
+                  ${item.is_featured ? `<span class="featured-label">重点款</span>` : ""}
+                  ${item.intent ? `<span class="submission-intent">${escapeHtml(item.intent)}</span>` : ""}
+                  ${item.remark ? `<p>${escapeHtml(item.remark)}</p>` : ""}
+                </div>
+              </article>
+            `).join("")
+          : `<div class="empty">该次提交暂无商品明细</div>`}
+      </div>
+    </div>
+  `;
+  els.modal.classList.remove("hidden");
   refreshIcons();
 }
 
@@ -3491,6 +3495,7 @@ document.addEventListener("click", (event) => {
   if (action === "toggle") toggleProduct(id);
   if (action === "feature") toggleFeatured(id);
   if (action === "detail") openDetail(id);
+  if (action === "view-submission") openSubmissionDetail(id);
   if (action === "preview") openImagePreview(id);
   if (action === "remove") toggleProduct(id);
   if (action === "edit-override") openBrandProductEditor(id);
@@ -3839,10 +3844,23 @@ if (els.brandNewProductsButton) {
 if (els.brandCreateTaskButton) {
   els.brandCreateTaskButton.addEventListener("click", createSelectionTask);
 }
-if (els.productSummaryToggle) {
-  els.productSummaryToggle.addEventListener("click", () => {
-    state.productSummaryCollapsed = !state.productSummaryCollapsed;
-    renderProductSummaryCollapse();
+if (els.adminSubmissionDateFrom) {
+  els.adminSubmissionDateFrom.addEventListener("change", (event) => {
+    state.adminSubmissionFilters.dateFrom = event.target.value;
+    renderAdmin();
+  });
+}
+if (els.adminSubmissionDateTo) {
+  els.adminSubmissionDateTo.addEventListener("change", (event) => {
+    state.adminSubmissionFilters.dateTo = event.target.value;
+    renderAdmin();
+  });
+}
+if (els.adminSubmissionFilterReset) {
+  els.adminSubmissionFilterReset.addEventListener("click", () => {
+    state.adminSubmissionFilters.dateFrom = "";
+    state.adminSubmissionFilters.dateTo = "";
+    renderAdmin();
   });
 }
 

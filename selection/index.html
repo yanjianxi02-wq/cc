@@ -437,17 +437,26 @@
             </div>
 
             <div class="admin-panels">
-              <div class="admin-card" id="productSummaryCard">
-                <button class="collapse-toggle" id="productSummaryToggle" type="button">
-                  <span>商品热度汇总</span>
-                  <i data-lucide="chevron-up"></i>
-                </button>
-                <div id="productSummaryPanel">
-                  <div id="productSummary"></div>
+              <div class="admin-card admin-submission-card">
+                <div class="admin-submission-head">
+                  <div>
+                    <h3>达人提交记录</h3>
+                    <p id="creatorSummaryMeta">全部记录</p>
+                  </div>
+                  <div class="admin-submission-filters" aria-label="达人提交日期筛选">
+                    <label>
+                      <span>开始日期</span>
+                      <input id="adminSubmissionDateFrom" type="date" />
+                    </label>
+                    <label>
+                      <span>结束日期</span>
+                      <input id="adminSubmissionDateTo" type="date" />
+                    </label>
+                    <button class="ghost-button" id="adminSubmissionFilterReset" type="button">
+                      <i data-lucide="rotate-ccw"></i><span>清除筛选</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div class="admin-card">
-                <h3>达人提交记录</h3>
                 <div id="creatorSummary"></div>
               </div>
             </div>
