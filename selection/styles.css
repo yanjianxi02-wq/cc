@@ -1696,10 +1696,12 @@ textarea:focus {
 
 .editor-row {
   display: grid;
-  grid-template-columns: 28px 72px minmax(150px, 0.9fr) 92px 92px minmax(170px, 1.1fr) minmax(130px, 0.9fr) 92px 116px minmax(130px, 0.8fr) auto;
+  grid-template-columns: 28px 54px minmax(190px, 1.4fr) 82px 82px minmax(110px, 0.9fr) minmax(160px, 1fr) 42px;
   gap: 12px;
   align-items: center;
-  padding: 12px 0;
+  min-width: 940px;
+  min-height: 76px;
+  padding: 8px 4px;
   border-top: 1px solid var(--line);
 }
 
@@ -1721,13 +1723,13 @@ textarea:focus {
 
 .editor-image {
   position: relative;
-  width: 72px;
-  height: 86px;
+  width: 54px;
+  height: 60px;
 }
 
 .editor-row img {
-  width: 72px;
-  height: 86px;
+  width: 54px;
+  height: 60px;
   object-fit: cover;
   border-radius: 6px;
   background: #f1f1ed;
@@ -1743,12 +1745,187 @@ textarea:focus {
 
 .editor-meta {
   display: grid;
-  gap: 6px;
+  gap: 3px;
 }
 
 .editor-meta small {
   color: var(--muted);
   line-height: 1.45;
+}
+
+#brandProductEditor {
+  overflow-x: auto;
+}
+
+.editor-stat {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.editor-stat span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.editor-stat strong {
+  font-size: 14px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-presale strong {
+  font-weight: 700;
+}
+
+.editor-tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.editor-level {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e5f4ee;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.editor-level.level-s {
+  background: #fff0e8;
+  color: #c2412d;
+}
+
+.editor-buttons {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.brand-edit-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) min(580px, 100%);
+}
+
+.brand-edit-backdrop {
+  border: 0;
+  background: rgba(20, 32, 39, 0.48);
+  cursor: default;
+}
+
+.brand-edit-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  background: #fff;
+  box-shadow: -16px 0 36px rgba(20, 32, 39, 0.18);
+}
+
+.brand-edit-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-edit-header p {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.brand-edit-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.brand-edit-drawer-content {
+  display: grid;
+  gap: 20px;
+  padding: 20px 22px;
+}
+
+.brand-edit-product-summary {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.brand-edit-product-image {
+  position: relative;
+  width: 82px;
+  height: 96px;
+}
+
+.brand-edit-product-image img {
+  width: 82px;
+  height: 96px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #f1f1ed;
+}
+
+.brand-edit-product-summary strong {
+  display: block;
+  line-height: 1.35;
+}
+
+.brand-edit-product-summary p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.brand-edit-tags {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.brand-edit-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.brand-edit-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.brand-edit-fields label > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.brand-edit-image-field {
+  grid-column: 1 / -1;
+}
+
+.brand-edit-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 4px;
 }
 
 .visibility-pill {
@@ -1780,12 +1957,6 @@ textarea:focus {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
-}
-
-.editor-buttons {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
 }
 
 .admin-card h3 {
@@ -1978,9 +2149,721 @@ textarea:focus {
   display: none !important;
 }
 
+.compass-page {
+  display: grid;
+  gap: 14px;
+}
+
+.compass-filter-panel,
+.compass-card,
+.compass-detail-head,
+.compass-unscoped-note {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.compass-filter-panel {
+  padding: 14px;
+}
+
+.compass-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(140px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.compass-filter-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.compass-filter-grid input,
+.compass-filter-grid select {
+  min-width: 0;
+}
+
+.compass-filter-apply {
+  height: 42px;
+  white-space: nowrap;
+}
+
+.compass-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.compass-kpi {
+  min-height: 92px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--green);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.compass-kpi span,
+.compass-kpi small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compass-kpi strong {
+  display: block;
+  margin: 7px 0 3px;
+  color: var(--ink);
+  font-size: 23px;
+  line-height: 1.15;
+}
+
+.compass-kpi:nth-child(4n + 2) { border-top-color: #3e78bd; }
+.compass-kpi:nth-child(4n + 3) { border-top-color: #a17124; }
+.compass-kpi:nth-child(4n + 4) { border-top-color: #c34a36; }
+
+.compass-card {
+  padding: 15px;
+}
+
+.compass-card-head,
+.compass-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+.compass-card-head h3,
+.compass-detail-head h2 {
+  margin: 0;
+}
+
+.compass-card-head h3 {
+  font-size: 17px;
+}
+
+.compass-card-head > div > span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compass-card-head p,
+.compass-detail-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.compass-card-head > span {
+  flex: 0 0 auto;
+  color: var(--green-dark);
+  background: var(--soft-green);
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.compass-sort-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f7f9f8;
+}
+
+.compass-sort-toggle button {
+  border: 0;
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.compass-sort-toggle button.active {
+  color: var(--green-dark);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(11, 55, 45, 0.12);
+}
+
+.compass-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.compass-table {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.compass-table th,
+.compass-table td {
+  padding: 10px 11px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.compass-table th {
+  color: var(--muted);
+  background: #f7f9f8;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.compass-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.compass-table td strong,
+.compass-table td b {
+  display: block;
+  color: var(--ink);
+}
+
+.compass-table td small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compass-open-button {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.compass-confidence {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.compass-confidence.stable {
+  color: #07553e;
+  background: var(--soft-green);
+}
+
+.compass-confidence.initial {
+  color: #875c09;
+  background: #fff4df;
+}
+
+.compass-confidence.insufficient {
+  color: #65717d;
+  background: #eef1f4;
+}
+
+.compass-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.compass-pagination .ghost-button {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.compass-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.compass-breakdown-card {
+  min-height: 230px;
+}
+
+.compass-bar-list {
+  display: grid;
+  gap: 12px;
+}
+
+.compass-bar-row {
+  display: grid;
+  gap: 5px;
+}
+
+.compass-bar-top,
+.compass-bar-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  font-size: 12px;
+}
+
+.compass-bar-top strong {
+  font-size: 13px;
+}
+
+.compass-bar-top span,
+.compass-bar-meta {
+  color: var(--muted);
+}
+
+.compass-bar-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf0ef;
+}
+
+.compass-bar-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.compass-detail-head {
+  padding: 16px;
+  margin: 0;
+}
+
+.compass-detail-head .eyebrow {
+  margin: 10px 0 2px;
+}
+
+.text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  color: var(--green-dark);
+  background: transparent;
+  border: 0;
+  font-weight: 800;
+}
+
+.text-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.compass-detail-kpis {
+  margin-top: 14px;
+}
+
+.compass-detail-kpis .compass-kpi strong {
+  font-size: 20px;
+}
+
+.compass-habit-card {
+  background: #fbfcfb;
+}
+
+.compass-definition-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.compass-definition-list div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.compass-definition-list div:first-child {
+  border-top: 0;
+}
+
+.compass-definition-list dt {
+  color: var(--muted);
+}
+
+.compass-definition-list dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 800;
+}
+
+.compass-alignment-card {
+  margin-top: 14px;
+}
+
+.compass-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.compass-mini-grid .compass-kpi {
+  min-height: 78px;
+  border-top-width: 1px;
+}
+
+.compass-mini-grid .compass-kpi strong {
+  font-size: 20px;
+}
+
+.compass-experience-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.compass-experience-card {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f9fbfa;
+}
+
+.compass-experience-card > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.compass-experience-card h4,
+.compass-experience-card p {
+  margin: 0;
+}
+
+.compass-experience-card p {
+  line-height: 1.55;
+}
+
+.compass-experience-card small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.compass-remark-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.compass-remark-chips span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #355d91;
+  background: #eef4fc;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compass-raw-details,
+.compass-heat-detail,
+.compass-history-item {
+  border-top: 1px solid var(--line);
+}
+
+.compass-raw-details summary,
+.compass-heat-detail summary,
+.compass-history-item summary {
+  cursor: pointer;
+  padding: 10px 0;
+  font-weight: 800;
+}
+
+.compass-raw-details article {
+  display: grid;
+  gap: 5px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.compass-raw-details article div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.compass-raw-details small,
+.compass-raw-details p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.compass-raw-details p {
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.compass-history-card {
+  margin-top: 14px;
+}
+
+.compass-history-list {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
+.compass-history-item:first-child {
+  border-top: 0;
+}
+
+.compass-history-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  list-style: none;
+}
+
+.compass-history-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.compass-history-item summary strong,
+.compass-history-item summary small {
+  display: block;
+}
+
+.compass-history-item summary small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compass-history-item summary > span {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.compass-history-expanded {
+  padding: 0 0 12px;
+}
+
+.compass-history-expanded > p {
+  margin: 0 0 9px;
+  color: var(--muted);
+}
+
+.compass-history-items {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.compass-history-items article {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 9px;
+  align-items: start;
+  padding: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.compass-history-items article:first-child {
+  border-top: 0;
+}
+
+.compass-history-items strong,
+.compass-history-items small {
+  display: block;
+}
+
+.compass-history-items small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.compass-history-items p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compass-rank {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--green);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.compass-unscoped-note {
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.compass-unscoped-note strong {
+  color: var(--ink);
+}
+
+.compass-unscoped-note div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.compass-unscoped-note b {
+  padding: 4px 7px;
+  color: #5d5465;
+  background: #f3f1f5;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.compass-heat-card {
+  margin-top: 14px;
+}
+
+.compass-heat-list {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.compass-heat-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.25fr) 86px 112px minmax(132px, 1fr) minmax(170px, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.compass-heat-product strong,
+.compass-heat-product .compass-heat-sku,
+.compass-heat-product small,
+.compass-heat-row > div > span,
+.compass-heat-row > div > strong,
+.compass-heat-row > div > small {
+  display: block;
+}
+
+.compass-heat-product .compass-heat-sku {
+  width: fit-content;
+  margin-top: 2px;
+  color: var(--blue);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.compass-heat-product small,
+.compass-heat-row > div > span,
+.compass-heat-row > div > small,
+.compass-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compass-heat-row > div > strong {
+  margin-top: 4px;
+}
+
+.compass-heat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.compass-heat-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+  padding: 4px 6px;
+  color: #8a391f;
+  background: #fff1e8;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.compass-heat-detail {
+  grid-column: 1 / -1;
+}
+
+.compass-heat-detail p {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.compass-raw-remarks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.compass-raw-remarks > div {
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.compass-raw-remarks b,
+.compass-raw-remarks span,
+.compass-raw-remarks small {
+  display: block;
+}
+
+.compass-raw-remarks span,
+.compass-raw-remarks small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.compass-raw-remarks p {
+  color: var(--ink);
+  line-height: 1.45;
+}
+
 @media (max-width: 1450px) {
-  .editor-row {
-    grid-template-columns: 72px 1fr;
+  .editor-row { min-width: 940px; }
+
+  .compass-filter-grid {
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
+  }
+
+  .compass-heat-row {
+    grid-template-columns: minmax(160px, 1.2fr) 76px 100px minmax(120px, 1fr);
+  }
+
+  .compass-heat-tags {
+    grid-column: 1 / -1;
   }
 }
 
@@ -2011,12 +2894,33 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .compass-breakdown-grid,
+  .compass-experience-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compass-filter-grid {
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+  }
+
+  .compass-raw-remarks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .selection-drawer {
     position: static;
   }
 
-  .editor-row {
-    grid-template-columns: 72px 1fr;
+  .brand-edit-drawer {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-edit-backdrop {
+    display: none;
+  }
+
+  .brand-edit-panel {
+    width: 100%;
   }
 
   .editor-buttons {
@@ -2079,9 +2983,49 @@ textarea:focus {
   .filter-row,
   .status-strip,
   .admin-kpis,
+  .compass-kpi-grid,
+  .compass-mini-grid,
   .selected-row,
   .detail-layout {
     grid-template-columns: 1fr;
+  }
+
+  .compass-filter-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .compass-filter-apply {
+    width: 100%;
+  }
+
+  .compass-card-head,
+  .compass-detail-head,
+  .compass-history-item summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .compass-history-item summary > span {
+    text-align: left;
+  }
+
+  .compass-heat-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+  }
+
+  .compass-heat-product,
+  .compass-heat-tags,
+  .compass-heat-detail {
+    grid-column: 1 / -1;
+  }
+
+  .compass-bar-top,
+  .compass-bar-meta,
+  .compass-pagination,
+  .compass-raw-details article div {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .side-nav {
@@ -2164,5 +3108,19 @@ textarea:focus {
 
   .sidebar {
     padding: 16px 12px;
+  }
+
+  .compass-filter-grid,
+  .compass-raw-remarks {
+    grid-template-columns: 1fr;
+  }
+
+  .compass-definition-list div,
+  .compass-history-items article {
+    grid-template-columns: 1fr;
+  }
+
+  .compass-definition-list dd {
+    text-align: left;
   }
 }

@@ -42,6 +42,7 @@ const state = {
   brandSelectedSkus: new Set(),
   brandFrontPreviewVisible: false,
   brandFrontDraggingSku: "",
+  brandEditingSku: "",
   selectedDraggingId: "",
   adminSavingSku: "",
   productOverrides: new Map(),
@@ -61,6 +62,25 @@ const state = {
   currentRole: "guest",
   creatorProfile: null,
   authView: "creator",
+  compassOverviewData: null,
+  compassProductHeatData: null,
+  compassCreatorDetailData: null,
+  compassSelectedCreatorId: "",
+  compassCreatorPage: 1,
+  compassHistoryPage: 1,
+  compassHeatOffset: 0,
+  compassCategorySort: "rate",
+  compassLoading: false,
+  compassDetailLoading: false,
+  compassRealtimeTimer: null,
+  compassFilters: {
+    creatorQuery: "",
+    taskId: "",
+    dateFrom: "",
+    dateTo: "",
+    category: "",
+    confidence: "",
+  },
   productDensity: localStorage.getItem("inmanProductDensity") === "compact" ? "compact" : "standard",
   visibleLimit: 60,
   filters: {
@@ -146,6 +166,17 @@ const els = {
   productSummaryCard: document.getElementById("productSummaryCard"),
   productSummaryPanel: document.getElementById("productSummaryPanel"),
   productSummaryToggle: document.getElementById("productSummaryToggle"),
+  compassRefreshButton: document.getElementById("compassRefreshButton"),
+  compassCreatorQuery: document.getElementById("compassCreatorQuery"),
+  compassTaskFilter: document.getElementById("compassTaskFilter"),
+  compassDateFrom: document.getElementById("compassDateFrom"),
+  compassDateTo: document.getElementById("compassDateTo"),
+  compassCategoryFilter: document.getElementById("compassCategoryFilter"),
+  compassConfidenceFilter: document.getElementById("compassConfidenceFilter"),
+  compassApplyFilters: document.getElementById("compassApplyFilters"),
+  compassOverview: document.getElementById("compassOverview"),
+  compassCreatorDetail: document.getElementById("compassCreatorDetail"),
+  compassProductHeat: document.getElementById("compassProductHeat"),
   brandLoginPanel: document.getElementById("brandLoginPanel"),
   brandDashboard: document.getElementById("brandDashboard"),
   brandEmailInput: document.getElementById("brandEmailInput"),
@@ -179,7 +210,9 @@ const els = {
   brandImportFile: document.getElementById("brandImportFile"),
   brandImportButton: document.getElementById("brandImportButton"),
   brandProductSearch: document.getElementById("brandProductSearch"),
-  brandProductEditor: document.getElementById("brandProductEditor")
+  brandProductEditor: document.getElementById("brandProductEditor"),
+  brandEditDrawer: document.getElementById("brandEditDrawer"),
+  brandEditDrawerContent: document.getElementById("brandEditDrawerContent")
 };
 
 function escapeHtml(value) {
@@ -741,6 +774,7 @@ function setRoleUi(role) {
   const creatorOnly = role === "creator";
   navButtonsFor("admin").forEach((button) => button.classList.toggle("hidden", creatorOnly));
   navButtonsFor("brand").forEach((button) => button.classList.toggle("hidden", creatorOnly));
+  navButtonsFor("compass").forEach((button) => button.classList.toggle("hidden", creatorOnly));
   els.userPill.classList.toggle("hidden", role === "guest");
   if (role === "creator") {
     els.creatorNameInput.readOnly = true;
@@ -1166,24 +1200,42 @@ function renderAdmin() {
     (a, b) => b.featuredCount - a.featuredCount || b.count - a.count
   );
 
-  els.productSummary.innerHTML = rankedProducts.length
-    ? rankedProducts
+  const compassHeatItems = compassArray(state.compassProductHeatData?.items);
+  els.productSummary.innerHTML = compassHeatItems.length
+    ? compassHeatItems
         .slice(0, 100)
         .map(
           (item) => `
             <div class="summary-row">
               <div>
                 <strong>${escapeHtml(item.product_name)} ${escapeHtml(item.sku)}
-                  ${item.featuredCount ? `<span class="featured-label">${item.featuredCount}人重点</span>` : ""}
+                  ${compassArray(item.labels).map((label) => `<span class="featured-label" title="${escapeHtml(label.reason || "")}">${escapeHtml(label.tag || "")}</span>`).join("")}
                 </strong>
-                <small>${escapeHtml(item.category)} · ${escapeHtml(item.plan_level || "未标注")}级</small>
+                <small>${escapeHtml(item.category || "未标注")} · ${escapeHtml(item.plan_level || "未标注")} · 分配 ${compassNumber(item.assigned_creator_count)} 人 · 选择率 ${compassRate(item.selection_rate)}</small>
               </div>
-              <strong>${item.count}人选择</strong>
+              <strong>${compassNumber(item.selected_creator_count)} 人选择</strong>
             </div>
           `
         )
         .join("")
-    : `<div class="empty">暂无云端选款记录</div>`;
+    : rankedProducts.length
+      ? rankedProducts
+          .slice(0, 100)
+          .map(
+            (item) => `
+              <div class="summary-row">
+                <div>
+                  <strong>${escapeHtml(item.product_name)} ${escapeHtml(item.sku)}
+                    ${item.featuredCount ? `<span class="featured-label">${item.featuredCount}人重点</span>` : ""}
+                  </strong>
+                  <small>${escapeHtml(item.category)} · ${escapeHtml(item.plan_level || "未标注")}级</small>
+                </div>
+                <strong>${item.count}人选择</strong>
+              </div>
+            `
+          )
+          .join("")
+      : `<div class="empty">暂无云端选款记录</div>`;
 
   els.creatorSummary.innerHTML = state.adminSubmissions.length
     ? state.adminSubmissions
@@ -1317,6 +1369,104 @@ function renderBrandFrontQueue() {
   }
 }
 
+function closeBrandProductEditor() {
+  state.brandEditingSku = "";
+  if (!els.brandEditDrawer) return;
+  els.brandEditDrawer.classList.add("hidden");
+  els.brandEditDrawer.setAttribute("aria-hidden", "true");
+}
+
+function openBrandProductEditor(sku) {
+  if (!productPool.some((product) => product.sku === sku)) return;
+  state.brandEditingSku = sku;
+  renderBrandProductEditDrawer();
+}
+
+function renderBrandProductEditDrawer() {
+  if (!els.brandEditDrawer || !els.brandEditDrawerContent) return;
+  const product = productPool.find((item) => item.sku === state.brandEditingSku);
+  if (!product) {
+    closeBrandProductEditor();
+    return;
+  }
+
+  const override = state.productOverrides.get(product.sku) || {};
+  const baseProduct = baseProductPool.find((item) => item.sku === product.sku) || product;
+  const saving = state.adminSavingSku === product.sku;
+  const hasOverrideImage = Boolean(override.image_url);
+  const currentLevel = override.plan_level || product.level || "";
+  const sortPriority = productSortPriority(product, override);
+
+  els.brandEditDrawerContent.innerHTML = `
+    <div class="brand-edit-product-summary">
+      <div class="brand-edit-product-image">
+        <img src="${product.img}" alt="${escapeHtml(product.name)}" />
+        <button class="image-preview-button editor-preview-button" data-action="preview" data-id="${product.id}" type="button" aria-label="放大查看图片" title="查看图片">
+          <i data-lucide="eye"></i>
+        </button>
+      </div>
+      <div>
+        <strong>${escapeHtml(product.name)} <span class="sku">${escapeHtml(product.sku)}</span></strong>
+        <p>基准：${priceText(baseProduct)} · ${escapeHtml(baseProduct.style || "未标注风格")} · ${escapeHtml(baseProduct.level || "未标注等级")}</p>
+        <div class="brand-edit-tags">
+          <span class="visibility-pill ${product.hidden ? "hidden-product" : ""}">${visibilityText(product)}</span>
+          ${sortPriority ? `<span class="priority-pill">前排 #${sortPriority}</span>` : ""}
+        </div>
+      </div>
+    </div>
+    <div class="brand-edit-fields">
+      <label>
+        <span>价格</span>
+        <input data-override-sku="${product.sku}" data-override-field="price" value="${override.price ?? product.price ?? ""}" inputmode="decimal" />
+      </label>
+      <label>
+        <span>现货库存</span>
+        <input data-override-sku="${product.sku}" data-override-field="stock" value="${product.stock ?? ""}" inputmode="numeric" placeholder="例如 500" />
+      </label>
+      <label>
+        <span>预售库存 / 产能</span>
+        <input data-override-sku="${product.sku}" data-override-field="presale_stock" value="${escapeHtml(product.presale_stock || "")}" placeholder="例如 15天不限量" />
+      </label>
+      <label>
+        <span>产品等级</span>
+        <select data-override-sku="${product.sku}" data-override-field="plan_level">
+          ${["", "S", "A", "B", "C"]
+            .map((level) => {
+              const label = level || "未标注";
+              return `<option value="${level}" ${currentLevel === level ? "selected" : ""}>${label}</option>`;
+            })
+            .join("")}
+        </select>
+      </label>
+      <label>
+        <span>达人可见</span>
+        <select data-override-sku="${product.sku}" data-override-field="is_hidden">
+          <option value="false" ${!product.hidden ? "selected" : ""}>达人可见</option>
+          <option value="true" ${product.hidden ? "selected" : ""}>达人不可见</option>
+        </select>
+      </label>
+      <label>
+        <span>风格线</span>
+        <input data-override-sku="${product.sku}" data-override-field="style" value="${escapeHtml(override.style || product.style || "")}" />
+      </label>
+      <label class="brand-edit-image-field">
+        <span>本地图片</span>
+        <input data-override-sku="${product.sku}" data-override-field="image_file" type="file" accept="image/*" />
+        <small class="field-hint">${hasOverrideImage ? "当前使用已上传图片" : "未上传新图则保留当前图片"}</small>
+      </label>
+    </div>
+    <footer class="brand-edit-footer">
+      <button class="ghost-button" data-action="reset-override" data-id="${product.sku}" type="button" ${saving ? "disabled" : ""}>恢复BI原始值</button>
+      <button class="primary-button" data-action="save-override" data-id="${product.sku}" type="button" ${saving ? "disabled" : ""}>
+        <i data-lucide="save"></i><span>${saving ? "保存中" : "保存修改"}</span>
+      </button>
+    </footer>
+  `;
+  els.brandEditDrawer.classList.remove("hidden");
+  els.brandEditDrawer.setAttribute("aria-hidden", "false");
+  refreshIcons();
+}
+
 function renderBrandProductEditor() {
   if (!els.brandProductEditor) return;
   const query = state.brandFilters.query.trim().toLowerCase();
@@ -1354,79 +1504,53 @@ function renderBrandProductEditor() {
     ? list
         .map((product) => {
           const override = state.productOverrides.get(product.sku) || {};
-          const baseProduct = baseProductPool.find((item) => item.sku === product.sku) || product;
-          const saving = state.adminSavingSku === product.sku;
-          const hasOverrideImage = Boolean(override.image_url);
           const checked = state.brandSelectedSkus.has(product.sku);
           const sortPriority = productSortPriority(product, override);
           return `
-            <div class="editor-row">
+            <article class="editor-row">
               <label class="editor-check">
                 <input type="checkbox" data-brand-select="${product.sku}" ${checked ? "checked" : ""} />
               </label>
               <div class="editor-image">
-                <img src="${product.img}" alt="${product.name}" />
-                <button class="image-preview-button editor-preview-button" data-action="preview" data-id="${product.id}" aria-label="放大查看图片">
+                <img src="${product.img}" alt="${escapeHtml(product.name)}" />
+                <button class="image-preview-button editor-preview-button" data-action="preview" data-id="${product.id}" type="button" aria-label="放大查看图片" title="查看图片">
                   <i data-lucide="eye"></i>
                 </button>
               </div>
               <div class="editor-meta">
-                <strong>${product.name} <span class="sku">${product.sku}</span></strong>
-                <small>基准：${priceText(baseProduct)} · ${escapeHtml(baseProduct.style)} · ${escapeHtml(baseProduct.level || "未标注")}</small>
+                <strong>${escapeHtml(product.name)} <span class="sku">${escapeHtml(product.sku)}</span></strong>
+                <small>${escapeHtml(product.category || "未标注类目")} · ${escapeHtml(product.style || "未标注风格")}</small>
+              </div>
+              <div class="editor-stat">
+                <span>价格</span>
+                <strong>${priceText(product)}</strong>
+              </div>
+              <div class="editor-stat">
+                <span>现货</span>
+                <strong>${product.stock == null ? "待更新" : `${product.stock}`}</strong>
+              </div>
+              <div class="editor-stat editor-presale">
+                <span>预售 / 产能</span>
+                <strong>${escapeHtml(product.presale_stock || "未设置")}</strong>
+              </div>
+              <div class="editor-tags">
+                <span class="editor-level level-${escapeHtml(product.level || "unmarked").toLowerCase()}">${escapeHtml(product.level || "未标注")}</span>
                 <span class="visibility-pill ${product.hidden ? "hidden-product" : ""}">${visibilityText(product)}</span>
                 ${sortPriority ? `<span class="priority-pill">前排 #${sortPriority}</span>` : ""}
               </div>
-              <label>
-                <span>价格</span>
-                <input data-override-sku="${product.sku}" data-override-field="price" value="${override.price ?? product.price ?? ""}" inputmode="decimal" />
-              </label>
-              <label>
-                <span>现货库存</span>
-                <input data-override-sku="${product.sku}" data-override-field="stock" value="${product.stock ?? ""}" inputmode="numeric" placeholder="例如 500" />
-              </label>
-              <label>
-                <span>本地图片</span>
-                <input data-override-sku="${product.sku}" data-override-field="image_file" type="file" accept="image/*" />
-                <small class="field-hint">${hasOverrideImage ? "当前使用已上传图片" : "未上传新图则保留当前图片"}</small>
-              </label>
-              <label>
-                <span>预售库存 / 产能</span>
-                <input data-override-sku="${product.sku}" data-override-field="presale_stock" value="${escapeHtml(product.presale_stock || "")}" placeholder="例如 15天不限量" />
-              </label>
-              <label>
-                <span>产品等级</span>
-                <select data-override-sku="${product.sku}" data-override-field="plan_level">
-                  ${["", "S", "A", "B", "C"]
-                    .map((level) => {
-                      const current = override.plan_level || product.level || "";
-                      const label = level || "未标注";
-                      return `<option value="${level}" ${current === level ? "selected" : ""}>${label}</option>`;
-                    })
-                    .join("")}
-                </select>
-              </label>
-              <label>
-                <span>达人可见</span>
-                <select data-override-sku="${product.sku}" data-override-field="is_hidden">
-                  <option value="false" ${!product.hidden ? "selected" : ""}>达人可见</option>
-                  <option value="true" ${product.hidden ? "selected" : ""}>达人不可见</option>
-                </select>
-              </label>
-              <label>
-                <span>风格线</span>
-                <input data-override-sku="${product.sku}" data-override-field="style" value="${escapeHtml(override.style || product.style || "")}" />
-              </label>
               <div class="editor-buttons">
-                <button class="ghost-button" data-action="reset-override" data-id="${product.sku}">恢复</button>
-                <button class="primary-button" data-action="save-override" data-id="${product.sku}" ${saving ? "disabled" : ""}>${saving ? "保存中" : "保存"}</button>
+                <button class="icon-button" data-action="edit-override" data-id="${product.sku}" type="button" aria-label="编辑商品" title="编辑商品">
+                  <i data-lucide="pencil"></i>
+                </button>
               </div>
-            </div>
+            </article>
           `;
         })
         .join("")
     : `<div class="empty">没有匹配到商品</div>`;
   renderBrandBatchState(visibleSkus);
   renderBrandFrontQueue();
+  renderBrandProductEditDrawer();
   refreshIcons();
 }
 
@@ -1521,8 +1645,437 @@ function openImagePreview(id) {
   refreshIcons();
 }
 
+function compassArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function compassNumber(value, digits = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return number.toLocaleString("zh-CN", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: 0,
+  });
+}
+
+function compassRate(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return `${(number * 100).toFixed(number * 100 % 1 ? 1 : 0)}%`;
+}
+
+function compassDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function compassConfidenceClass(value) {
+  return value === "稳定偏好" ? "stable" : value === "初步倾向" ? "initial" : "insufficient";
+}
+
+function compassDateParam(value) {
+  return value ? `${value}T00:00:00+08:00` : null;
+}
+
+function compassMetric(label, value, hint = "") {
+  return `
+    <div class="compass-kpi">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+      ${hint ? `<small>${escapeHtml(hint)}</small>` : ""}
+    </div>
+  `;
+}
+
+function compassBarRows(items, options = {}) {
+  const records = compassArray(items);
+  if (!records.length) return `<div class="empty tiny">暂无可分析样本</div>`;
+  const max = Math.max(...records.map((item) => Number(item.selection_rate) || 0), 0.01);
+  return records
+    .map((item) => {
+      const rate = Number(item.selection_rate) || 0;
+      const bar = Math.max(3, Math.round((rate / max) * 100));
+      return `
+        <div class="compass-bar-row">
+          <div class="compass-bar-top">
+            <strong>${escapeHtml(item.label || "未标注")}</strong>
+            <span>${compassRate(item.selection_rate)} · ${compassNumber(item.selected_count)} / ${compassNumber(item.available_count)}</span>
+          </div>
+          <div class="compass-bar-track"><span style="width:${bar}%"></span></div>
+          <div class="compass-bar-meta">
+            <span>重点 ${compassNumber(item.featured_count)} · 重点率 ${compassRate(item.featured_rate)}</span>
+            ${options.showOrder === false ? "" : `<span>平均顺位 ${compassNumber(item.average_selection_order, 1)} · 前三 ${compassNumber(item.top_three_count)}</span>`}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function compassBreakdownCard(title, items, options = {}) {
+  const records = options.categorySort
+    ? [...compassArray(items)].sort((left, right) => {
+        if (state.compassCategorySort === "count") {
+          return (Number(right.selected_count) - Number(left.selected_count))
+            || (Number(right.selection_rate) - Number(left.selection_rate))
+            || String(left.label || "").localeCompare(String(right.label || ""), "zh-CN");
+        }
+        return (Number(right.selection_rate) - Number(left.selection_rate))
+          || (Number(right.selected_count) - Number(left.selected_count))
+          || String(left.label || "").localeCompare(String(right.label || ""), "zh-CN");
+      })
+    : items;
+  const categorySortControl = options.categorySort
+    ? `<div class="compass-sort-toggle" role="group" aria-label="品类偏好排序">
+        <button type="button" class="${state.compassCategorySort === "rate" ? "active" : ""}" data-action="compass-category-sort" data-sort="rate">选择率</button>
+        <button type="button" class="${state.compassCategorySort === "count" ? "active" : ""}" data-action="compass-category-sort" data-sort="count">选择数量</button>
+      </div>`
+    : "";
+  return `
+    <section class="compass-card compass-breakdown-card">
+      <div class="compass-card-head">
+        <div><h3>${escapeHtml(title)}</h3><span>可选 / 已选 / 选择率</span></div>
+        ${categorySortControl}
+      </div>
+      <div class="compass-bar-list">${compassBarRows(records, options)}</div>
+    </section>
+  `;
+}
+
+function renderCompassFilters() {
+  const data = state.compassOverviewData;
+  if (!data || !els.compassTaskFilter || !els.compassCategoryFilter) return;
+  const tasks = compassArray(data.filters?.tasks);
+  const categories = compassArray(data.filters?.categories);
+  els.compassTaskFilter.innerHTML = [
+    `<option value="">全部任务</option>`,
+    ...tasks.map((task) => `<option value="${escapeHtml(task.id)}">${escapeHtml(task.title)}</option>`),
+  ].join("");
+  els.compassCategoryFilter.innerHTML = [
+    `<option value="">全部品类</option>`,
+    ...categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`),
+  ].join("");
+  els.compassTaskFilter.value = state.compassFilters.taskId;
+  els.compassCategoryFilter.value = state.compassFilters.category;
+  els.compassCreatorQuery.value = state.compassFilters.creatorQuery;
+  els.compassDateFrom.value = state.compassFilters.dateFrom;
+  els.compassDateTo.value = state.compassFilters.dateTo;
+  els.compassConfidenceFilter.value = state.compassFilters.confidence;
+}
+
+function renderCompassOverview() {
+  if (!els.compassOverview) return;
+  const data = state.compassOverviewData;
+  if (!data) {
+    els.compassOverview.innerHTML = `<div class="compass-card"><div class="empty">暂无分析数据。请确认“达人选品罗盘”分析迁移已执行，并使用品牌方账号刷新。</div></div>`;
+    return;
+  }
+  const summary = data.summary || {};
+  const creators = compassArray(data.creators);
+  const pageSize = 20;
+  const pageCount = Math.max(1, Math.ceil(creators.length / pageSize));
+  state.compassCreatorPage = Math.min(Math.max(state.compassCreatorPage, 1), pageCount);
+  const start = (state.compassCreatorPage - 1) * pageSize;
+  const pageCreators = creators.slice(start, start + pageSize);
+
+  els.compassOverview.innerHTML = `
+    <div class="compass-kpi-grid">
+      ${compassMetric("已审核达人", compassNumber(summary.approved_creator_count))}
+      ${compassMetric("已创建任务", compassNumber(summary.created_task_count))}
+      ${compassMetric("已提交任务", compassNumber(summary.submitted_task_count))}
+      ${compassMetric("有效选款明细", compassNumber(summary.valid_selection_item_count))}
+      ${compassMetric("累计重点款", compassNumber(summary.featured_selection_count))}
+      ${compassMetric("平均每次选款", compassNumber(summary.average_selection_count, 1))}
+      ${compassMetric("数据不足达人", compassNumber(summary.data_insufficient_creator_count))}
+      ${compassMetric("近30天有提交达人", compassNumber(summary.recent_submit_creator_count))}
+    </div>
+    <section class="compass-card compass-creator-card">
+      <div class="compass-card-head">
+        <div>
+          <h3>达人选款画像</h3>
+          <p>${escapeHtml(data.scope_note || "选择率仅按任务商品范围计算")}</p>
+        </div>
+        <span>${creators.length} 位达人</span>
+      </div>
+      <div class="compass-table-wrap">
+        <table class="compass-table">
+          <thead>
+            <tr>
+              <th>达人</th><th>任务</th><th>选款</th><th>重点</th><th>核心偏好</th><th>品牌推荐命中</th><th>置信度</th><th>最近提交</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pageCreators.length ? pageCreators.map((creator) => `
+              <tr>
+                <td><strong>${escapeHtml(creator.creator_name || "未命名达人")}</strong></td>
+                <td><b>${compassNumber(creator.submitted_task_count)}</b> / ${compassNumber(creator.assigned_task_count)}<small>完成 ${compassRate(creator.task_completion_rate)}</small></td>
+                <td><b>${compassNumber(creator.selected_count)}</b><small>平均 ${compassNumber(creator.average_selection_count, 1)} / 次</small></td>
+                <td><b>${compassNumber(creator.featured_count)}</b><small>${compassRate(creator.featured_rate)}</small></td>
+                <td><span>${escapeHtml(creator.core_category || "未标注")}</span><small>${escapeHtml(creator.core_price_band || "-")} · ${escapeHtml(creator.core_style || "-")}</small></td>
+                <td>${compassRate(creator.brand_recommendation_hit_rate)}</td>
+                <td><span class="compass-confidence ${compassConfidenceClass(creator.data_confidence)}">${escapeHtml(creator.data_confidence || "数据不足")}</span></td>
+                <td>${compassDateTime(creator.latest_submission_at)}</td>
+                <td><button class="ghost-button compass-open-button" data-action="compass-open-creator" data-id="${escapeHtml(creator.creator_user_id)}" type="button">查看</button></td>
+              </tr>
+            `).join("") : `<tr><td colspan="9"><div class="empty tiny">当前筛选条件下暂无达人任务数据</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+      <div class="compass-pagination">
+        <span>第 ${state.compassCreatorPage} / ${pageCount} 页</span>
+        <button class="ghost-button" data-action="compass-creator-page" data-page="${state.compassCreatorPage - 1}" type="button" ${state.compassCreatorPage <= 1 ? "disabled" : ""}>上一页</button>
+        <button class="ghost-button" data-action="compass-creator-page" data-page="${state.compassCreatorPage + 1}" type="button" ${state.compassCreatorPage >= pageCount ? "disabled" : ""}>下一页</button>
+      </div>
+    </section>
+  `;
+  renderCompassFilters();
+  refreshIcons();
+}
+
+function renderCompassProductHeat() {
+  if (!els.compassProductHeat) return;
+  const data = state.compassProductHeatData;
+  if (!data) {
+    els.compassProductHeat.innerHTML = "";
+    return;
+  }
+  const items = compassArray(data.items);
+  const currentPage = Math.floor(state.compassHeatOffset / 50) + 1;
+  const pageCount = Math.max(1, Math.ceil(Number(data.total_count || 0) / 50));
+  els.compassProductHeat.innerHTML = `
+    <section class="compass-card compass-heat-card">
+      <div class="compass-card-head">
+        <div>
+          <h3>商品达人热度</h3>
+          <p>基于已分配达人、已选、重点款与选款顺序；标签判断依据可展开查看。</p>
+        </div>
+        <span>${compassNumber(data.total_count)} 款</span>
+      </div>
+      <div class="compass-heat-list">
+        ${items.length ? items.map((item) => {
+          const labels = compassArray(item.labels);
+          const remarks = compassArray(item.raw_remarks);
+          return `
+            <article class="compass-heat-row">
+              <div class="compass-heat-product"><strong>${escapeHtml(item.product_name || "未命名商品")}</strong><span class="compass-heat-sku">${escapeHtml(item.sku || "-")}</span><small>${escapeHtml(item.category || "未标注")} · ${escapeHtml(item.style || "未标注")} · ${escapeHtml(item.plan_level || "未标注")}</small></div>
+              <div><span>分配</span><strong>${compassNumber(item.assigned_creator_count)} 人</strong></div>
+              <div><span>选择率</span><strong>${compassRate(item.selection_rate)}</strong><small>${compassNumber(item.selected_creator_count)} 人选择</small></div>
+              <div><span>重点款率</span><strong>${compassRate(item.featured_rate)}</strong><small>前三 ${compassNumber(item.top_three_count)} 次 · 平均 ${compassNumber(item.average_selection_order, 1)} 顺位</small></div>
+              <div class="compass-heat-tags">${labels.length ? labels.map((label) => `<span class="compass-heat-tag" title="${escapeHtml(label.reason || "")}">${escapeHtml(label.tag || "")}</span>`).join("") : `<span class="compass-muted">暂无标签</span>`}</div>
+              <details class="compass-heat-detail"><summary>查看达人与备注</summary><p><b>已选：</b>${escapeHtml(compassArray(item.selected_creator_names).join("、") || "暂无")}</p><p><b>未选：</b>${escapeHtml(compassArray(item.not_selected_creator_names).join("、") || "暂无")}</p>${remarks.length ? `<div class="compass-raw-remarks">${remarks.map((remark) => `<div><b>${escapeHtml(remark.creator_name || "达人")}</b><span>${escapeHtml(compassDateTime(remark.submitted_at))}</span><p>${escapeHtml(remark.remark || "")}</p><small>${escapeHtml(compassArray(remark.labels).join("、") || "其他")}</small></div>`).join("")}</div>` : `<p class="compass-muted">暂无达人备注</p>`}</details>
+            </article>
+          `;
+        }).join("") : `<div class="empty">尚无可计算商品热度的已提交任务。</div>`}
+      </div>
+      <div class="compass-pagination">
+        <span>第 ${currentPage} / ${pageCount} 页</span>
+        <button class="ghost-button" data-action="compass-heat-page" data-offset="${Math.max(state.compassHeatOffset - 50, 0)}" type="button" ${state.compassHeatOffset <= 0 ? "disabled" : ""}>上一页</button>
+        <button class="ghost-button" data-action="compass-heat-page" data-offset="${state.compassHeatOffset + 50}" type="button" ${currentPage >= pageCount ? "disabled" : ""}>下一页</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderCompassCreatorDetail() {
+  if (!els.compassCreatorDetail) return;
+  const data = state.compassCreatorDetailData;
+  if (!data) {
+    els.compassCreatorDetail.classList.add("hidden");
+    els.compassCreatorDetail.innerHTML = "";
+    return;
+  }
+  const overview = data.overview || {};
+  const breakdowns = data.breakdowns || {};
+  const recommendation = data.brand_recommendation || {};
+  const habits = data.selection_habits || {};
+  const history = data.history || {};
+  const cards = compassArray(data.experience_cards);
+  const rawRemarks = compassArray(data.remarks?.raw);
+  const remarkCategories = compassArray(data.remarks?.categories);
+  const historyRecords = compassArray(history.records);
+  const historyPage = Number(history.page || 1);
+  const historyPages = Math.max(1, Math.ceil(Number(history.total_count || 0) / Number(history.page_size || 8)));
+  const topTraits = habits.top_three_traits || {};
+  const traitText = [
+    compassArray(topTraits.categories).length ? `品类：${compassArray(topTraits.categories).join("、")}` : "",
+    compassArray(topTraits.price_bands).length ? `价格带：${compassArray(topTraits.price_bands).join("、")}` : "",
+    compassArray(topTraits.styles).length ? `风格线：${compassArray(topTraits.styles).join("、")}` : "",
+  ].filter(Boolean).join("；") || "暂无前三顺位样本";
+  const historical = data.historical_unscoped_distribution || {};
+
+  els.compassCreatorDetail.classList.remove("hidden");
+  els.compassCreatorDetail.innerHTML = `
+    <section class="compass-detail-head">
+      <div>
+        <button class="text-button" data-action="compass-close-detail" type="button"><i data-lucide="arrow-left"></i><span>返回达人总览</span></button>
+        <p class="eyebrow">达人选款详情</p>
+        <h2>${escapeHtml(data.creator?.creator_name || "达人")}</h2>
+        <p>${escapeHtml(data.disclaimer || "偏好强度不代表商品实际销售表现。")}</p>
+      </div>
+      <span class="compass-confidence ${compassConfidenceClass(overview.data_confidence)}">${escapeHtml(overview.data_confidence || "数据不足")}</span>
+    </section>
+    <div class="compass-kpi-grid compass-detail-kpis">
+      ${compassMetric("分配任务", compassNumber(overview.assigned_task_count))}
+      ${compassMetric("已提交任务", compassNumber(overview.submitted_task_count), `完成 ${compassRate(overview.task_completion_rate)}`)}
+      ${compassMetric("累计选款", compassNumber(overview.selected_count), `平均 ${compassNumber(overview.average_selection_count, 1)} / 次`)}
+      ${compassMetric("累计重点款", compassNumber(overview.featured_count), `占比 ${compassRate(overview.featured_rate)}`)}
+      ${compassMetric("品牌推荐命中", compassRate(overview.brand_recommendation_hit_rate))}
+      ${compassMetric("有效分析任务", compassNumber(overview.valid_analysis_task_count))}
+      ${compassMetric("可选样本量", compassNumber(overview.available_sample_count))}
+      ${compassMetric("最近提交", compassDateTime(overview.latest_submission_at))}
+    </div>
+    <div class="compass-breakdown-grid">
+      ${compassBreakdownCard("品类偏好", breakdowns.category, { categorySort: true })}
+      ${compassBreakdownCard("价格带偏好", breakdowns.price_band)}
+      ${compassBreakdownCard("风格线偏好", breakdowns.style)}
+      ${compassBreakdownCard("商品等级偏好", breakdowns.plan_level, { showOrder: false })}
+      ${compassBreakdownCard("选款库存分布", breakdowns.stock_band, { showOrder: false })}
+      <section class="compass-card compass-habit-card">
+        <div class="compass-card-head"><h3>选款习惯</h3><span>任务内行为</span></div>
+        <dl class="compass-definition-list">
+          <div><dt>建议选款数达成率</dt><dd>${compassRate(overview.recommended_completion_rate)}</dd></div>
+          <div><dt>平均偏好强度</dt><dd>${compassNumber(habits.average_preference_strength, 1)}</dd></div>
+          ${overview.on_time_submission_rate == null ? "" : `<div><dt>设置截止时间任务的按时提交率</dt><dd>${compassRate(overview.on_time_submission_rate)}</dd></div>`}
+          <div><dt>前三商品共同特征</dt><dd>${escapeHtml(traitText)}</dd></div>
+        </dl>
+      </section>
+    </div>
+    <section class="compass-card compass-alignment-card">
+      <div class="compass-card-head"><div><h3>品牌推荐匹配</h3><p>重合度仅表示当前选款方向一致性，不代表销售结果。</p></div><span>${compassRate(recommendation.direction_overlap_rate)} 方向重合</span></div>
+      <div class="compass-mini-grid">
+        ${compassMetric("品牌推荐且已选", compassNumber(recommendation.brand_recommended_selected_count))}
+        ${compassMetric("品牌推荐但未选", compassNumber(recommendation.brand_recommended_not_selected_count))}
+        ${compassMetric("重点但非品牌前排", compassNumber(recommendation.featured_not_brand_recommended_count))}
+        ${compassMetric("品牌前排可选款", compassNumber(recommendation.brand_recommended_available_count))}
+      </div>
+    </section>
+    <section class="compass-card">
+      <div class="compass-card-head"><div><h3>动态经验卡</h3><p>只基于任务范围和已提交选款生成；低样本会明确标记。</p></div></div>
+      <div class="compass-experience-grid">${cards.length ? cards.map((card) => `
+        <article class="compass-experience-card">
+          <div><span class="compass-confidence ${compassConfidenceClass(card.data_confidence)}">${escapeHtml(card.data_confidence || "数据不足")}</span><h4>${escapeHtml(card.label || "未标注")} · ${escapeHtml(card.title || "经验")}</h4></div>
+          <p>${escapeHtml(card.conclusion || "当前样本不足以形成结论。")}</p>
+          <small>${compassDateTime(card.data_time_range_start)} 至 ${compassDateTime(card.data_time_range_end)} · ${compassNumber(card.support_task_count)} 个任务 · 可选 ${compassNumber(card.available_count)} · 已选 ${compassNumber(card.selected_count)} · 选择率 ${compassRate(card.selection_rate)} · 重点 ${compassNumber(card.featured_count)}</small>
+        </article>
+      `).join("") : `<div class="empty">暂无满足条件的经验卡，继续积累任务数据后会自动生成。</div>`}</div>
+    </section>
+    <section class="compass-card">
+      <div class="compass-card-head"><div><h3>达人备注分析</h3><p>仅按关键词归类，原始备注保持原样。</p></div><span>${rawRemarks.length} 条原始备注</span></div>
+      <div class="compass-remark-chips">${remarkCategories.length ? remarkCategories.map((item) => `<span>${escapeHtml(item.label)} ${compassNumber(item.count)}</span>`).join("") : `<span class="compass-muted">暂无备注</span>`}</div>
+      <details class="compass-raw-details"><summary>查看原始备注</summary>${rawRemarks.length ? rawRemarks.map((remark) => `<article><div><b>${escapeHtml(remark.product_name || remark.sku || "商品")}</b><small>${compassDateTime(remark.submitted_at)} · ${escapeHtml(compassArray(remark.labels).join("、") || "其他")}</small></div><p>${escapeHtml(remark.remark || "")}</p></article>`).join("") : `<div class="empty tiny">暂无原始备注</div>`}</details>
+    </section>
+    <section class="compass-card compass-history-card">
+      <div class="compass-card-head"><div><h3>历史任务记录</h3><p>只展示该达人分配到的任务；可展开查看选款顺序和备注。</p></div><span>${compassNumber(history.total_count)} 个任务</span></div>
+      <div class="compass-history-list">${historyRecords.length ? historyRecords.map((record) => `
+        <details class="compass-history-item">
+          <summary><div><strong>${escapeHtml(record.title || "未命名任务")}</strong><small>${compassNumber(record.task_product_count)} 款任务商品 · 建议 ${compassNumber(record.recommended_count)} 款 · 实选 ${compassNumber(record.actual_selected_count)} 款 · 重点 ${compassNumber(record.featured_count)} 款</small></div><span>${record.submitted_at ? compassDateTime(record.submitted_at) : "尚未提交"}</span></summary>
+          <div class="compass-history-expanded">
+            <p>${escapeHtml(record.description || "无任务说明")}</p>
+            <div class="compass-history-items">${compassArray(record.items).length ? compassArray(record.items).map((item) => `<article><span class="compass-rank">${compassNumber(item.selection_order)}</span><div><strong>${escapeHtml(item.product_name || "未命名商品")} ${escapeHtml(item.sku || "")}</strong><small>${escapeHtml(item.category || "未标注")} · ${escapeHtml(item.style || "未标注")} · ${escapeHtml(item.plan_level || "未标注")} · ￥${compassNumber(item.price, 1)}${item.is_featured ? " · 重点款" : ""}</small>${item.remark ? `<p>备注：${escapeHtml(item.remark)}</p>` : ""}</div><b>${compassNumber(item.preference_strength)} 分</b></article>`).join("") : `<div class="empty tiny">本次任务尚未提交选款</div>`}</div>
+          </div>
+        </details>
+      `).join("") : `<div class="empty">当前筛选范围内暂无任务记录。</div>`}</div>
+      <div class="compass-pagination"><span>第 ${historyPage} / ${historyPages} 页</span><button class="ghost-button" data-action="compass-history-page" data-page="${historyPage - 1}" type="button" ${historyPage <= 1 ? "disabled" : ""}>上一页</button><button class="ghost-button" data-action="compass-history-page" data-page="${historyPage + 1}" type="button" ${historyPage >= historyPages ? "disabled" : ""}>下一页</button></div>
+    </section>
+    ${Number(historical.selection_item_count || 0) ? `<section class="compass-unscoped-note"><strong>历史已选分布</strong><span>${escapeHtml(historical.note || "")}</span><div>${compassArray(historical.categories).map((item) => `<b>${escapeHtml(item.label || "未标注")} ${compassNumber(item.selected_count)} 款</b>`).join("")}</div></section>` : ""}
+  `;
+  refreshIcons();
+}
+
+async function loadCompassCreatorDetail(creatorUserId, page = 1) {
+  if (!cloudEnabled || state.currentRole !== "brand" || !creatorUserId) return;
+  state.compassDetailLoading = true;
+  const { data, error } = await cloud.rpc("get_creator_selection_compass", {
+    p_creator_user_id: creatorUserId,
+    p_task_id: state.compassFilters.taskId || null,
+    p_date_from: compassDateParam(state.compassFilters.dateFrom),
+    p_date_to: compassDateParam(state.compassFilters.dateTo),
+    p_history_page: page,
+    p_history_page_size: 8,
+  });
+  state.compassDetailLoading = false;
+  if (error) {
+    console.error(error);
+    showToast("达人详情加载失败");
+    return;
+  }
+  state.compassSelectedCreatorId = creatorUserId;
+  state.compassHistoryPage = page;
+  state.compassCreatorDetailData = data || null;
+  renderCompassCreatorDetail();
+  els.compassCreatorDetail?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function loadCompassData(options = {}) {
+  if (!cloudEnabled || state.currentRole !== "brand") return;
+  if (state.compassLoading) return;
+  state.compassLoading = true;
+  if (els.compassRefreshButton) els.compassRefreshButton.disabled = true;
+  const params = {
+    p_creator_query: state.compassFilters.creatorQuery || null,
+    p_task_id: state.compassFilters.taskId || null,
+    p_date_from: compassDateParam(state.compassFilters.dateFrom),
+    p_date_to: compassDateParam(state.compassFilters.dateTo),
+    p_category: state.compassFilters.category || null,
+    p_confidence: state.compassFilters.confidence || null,
+  };
+  const [{ data: overview, error: overviewError }, { data: heat, error: heatError }] = await Promise.all([
+    cloud.rpc("get_selection_compass_overview", params),
+    cloud.rpc("get_product_creator_heat", {
+      p_date_from: params.p_date_from,
+      p_date_to: params.p_date_to,
+      p_category: params.p_category,
+      p_limit: 50,
+      p_offset: state.compassHeatOffset,
+    }),
+  ]);
+  state.compassLoading = false;
+  if (els.compassRefreshButton) els.compassRefreshButton.disabled = false;
+  if (overviewError || heatError) {
+    console.error(overviewError || heatError);
+    state.compassOverviewData = null;
+    state.compassProductHeatData = null;
+    renderCompassOverview();
+    renderCompassProductHeat();
+    if (!options.silent) showToast("罗盘分析暂不可用，请确认云端迁移已执行");
+    return;
+  }
+  state.compassOverviewData = overview || null;
+  state.compassProductHeatData = heat || null;
+  renderCompassOverview();
+  renderCompassProductHeat();
+  if (state.compassSelectedCreatorId) {
+    await loadCompassCreatorDetail(state.compassSelectedCreatorId, state.compassHistoryPage);
+  }
+  renderAdmin();
+}
+
+function applyCompassFilters() {
+  state.compassFilters.creatorQuery = els.compassCreatorQuery?.value.trim() || "";
+  state.compassFilters.taskId = els.compassTaskFilter?.value || "";
+  state.compassFilters.dateFrom = els.compassDateFrom?.value || "";
+  state.compassFilters.dateTo = els.compassDateTo?.value || "";
+  state.compassFilters.category = els.compassCategoryFilter?.value || "";
+  state.compassFilters.confidence = els.compassConfidenceFilter?.value || "";
+  state.compassCreatorPage = 1;
+  state.compassHeatOffset = 0;
+  state.compassSelectedCreatorId = "";
+  state.compassCreatorDetailData = null;
+  renderCompassCreatorDetail();
+  loadCompassData();
+}
+
 function setView(view) {
-  if (state.currentRole === "creator" && (view === "admin" || view === "brand")) {
+  if (state.currentRole === "creator" && (view === "admin" || view === "brand" || view === "compass")) {
     view = "selection";
   }
   state.view = view;
@@ -1533,7 +2086,7 @@ function setView(view) {
     panel.classList.toggle("hidden", panel.dataset.viewPanel !== view);
   });
   if (els.statusStrip) {
-    els.statusStrip.classList.toggle("hidden", view === "brand");
+    els.statusStrip.classList.toggle("hidden", view === "brand" || view === "compass");
   }
   renderCreatorTaskPanel();
   if (view !== "selection") {
@@ -1541,7 +2094,10 @@ function setView(view) {
   } else {
     document.querySelector(".content-grid").classList.remove("hidden");
   }
-  if (state.currentRole === "brand" && (view === "admin" || view === "brand")) syncAccessSession();
+  if (state.currentRole === "brand" && (view === "admin" || view === "brand" || view === "compass")) {
+    syncAccessSession();
+    if (view === "compass") loadCompassData({ silent: true });
+  }
 }
 
 function selectionPayload() {
@@ -1680,6 +2236,7 @@ async function syncAccessSession() {
       loadAdminData(),
       loadProductOverrides({ silent: true }),
       loadBrandTaskData({ silent: true }),
+      loadCompassData({ silent: true }),
     ]);
     subscribeAdminRealtime();
     renderBrandProductEditor();
@@ -1719,7 +2276,7 @@ async function syncAccessSession() {
   await loadProductOverrides({ silent: true });
   renderProducts();
   renderSelected();
-  if (state.view === "admin" || state.view === "brand") setView("selection");
+  if (state.view === "admin" || state.view === "brand" || state.view === "compass") setView("selection");
 }
 
 async function loginAdmin(source = "admin") {
@@ -1857,6 +2414,11 @@ async function logoutCurrentUser() {
   state.brandTaskProducts = [];
   state.brandTaskAssignments = [];
   state.brandCreators = [];
+  state.compassOverviewData = null;
+  state.compassProductHeatData = null;
+  state.compassCreatorDetailData = null;
+  state.compassSelectedCreatorId = "";
+  closeBrandProductEditor();
   state.brandTaskCreatorIds.clear();
   state.creatorTasks = [];
   state.taskFeatureReady = false;
@@ -2052,6 +2614,12 @@ async function loadProductOverrides(options = {}) {
   renderCatalogMeta();
 }
 
+function refreshCompassFromRealtime() {
+  if (state.currentRole !== "brand") return;
+  window.clearTimeout(state.compassRealtimeTimer);
+  state.compassRealtimeTimer = window.setTimeout(() => loadCompassData({ silent: true }), 450);
+}
+
 function subscribeAdminRealtime() {
   if (!cloudEnabled || state.adminChannel) return;
   state.adminChannel = cloud
@@ -2059,17 +2627,26 @@ function subscribeAdminRealtime() {
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "submissions" },
-      loadAdminData
+      () => {
+        loadAdminData();
+        refreshCompassFromRealtime();
+      }
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "selection_items" },
-      loadAdminData
+      () => {
+        loadAdminData();
+        refreshCompassFromRealtime();
+      }
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "product_overrides" },
-      () => loadProductOverrides({ silent: true })
+      () => {
+        loadProductOverrides({ silent: true });
+        refreshCompassFromRealtime();
+      }
     )
     .on(
       "postgres_changes",
@@ -2077,6 +2654,7 @@ function subscribeAdminRealtime() {
       async () => {
         await loadProductCatalog({ silent: true });
         await loadProductOverrides({ silent: true });
+        refreshCompassFromRealtime();
       }
     )
     .on(
@@ -2087,7 +2665,20 @@ function subscribeAdminRealtime() {
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "selection_tasks" },
-      () => loadBrandTaskData({ silent: true })
+      () => {
+        loadBrandTaskData({ silent: true });
+        refreshCompassFromRealtime();
+      }
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "selection_task_products" },
+      refreshCompassFromRealtime
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "selection_task_assignments" },
+      refreshCompassFromRealtime
     )
     .subscribe();
 }
@@ -2835,11 +3426,34 @@ document.addEventListener("click", (event) => {
   if (action === "detail") openDetail(id);
   if (action === "preview") openImagePreview(id);
   if (action === "remove") toggleProduct(id);
+  if (action === "edit-override") openBrandProductEditor(id);
+  if (action === "close-brand-editor") closeBrandProductEditor();
   if (action === "save-override") saveProductOverride(id);
   if (action === "reset-override") resetProductOverride(id);
   if (action === "front-remove") removeProductFromFront(id);
   if (action === "approve-request") approveCreatorRequest(id);
   if (action === "reject-request") rejectCreatorRequest(id);
+  if (action === "compass-open-creator") loadCompassCreatorDetail(id, 1);
+  if (action === "compass-close-detail") {
+    state.compassSelectedCreatorId = "";
+    state.compassCreatorDetailData = null;
+    renderCompassCreatorDetail();
+  }
+  if (action === "compass-creator-page") {
+    state.compassCreatorPage = Math.max(1, Number(actionButton.dataset.page) || 1);
+    renderCompassOverview();
+  }
+  if (action === "compass-history-page" && state.compassSelectedCreatorId) {
+    loadCompassCreatorDetail(state.compassSelectedCreatorId, Math.max(1, Number(actionButton.dataset.page) || 1));
+  }
+  if (action === "compass-heat-page") {
+    state.compassHeatOffset = Math.max(0, Number(actionButton.dataset.offset) || 0);
+    loadCompassData({ silent: true });
+  }
+  if (action === "compass-category-sort") {
+    state.compassCategorySort = actionButton.dataset.sort === "count" ? "count" : "rate";
+    renderCompassCreatorDetail();
+  }
   if (action === "task-status") updateSelectionTaskStatus(id, actionButton.dataset.status);
   if (action === "density-standard") setProductDensity("standard");
   if (action === "density-compact") setProductDensity("compact");
@@ -3071,6 +3685,8 @@ els.adminLogoutButton.addEventListener("click", logoutCurrentUser);
 els.brandLogoutButton.addEventListener("click", logoutCurrentUser);
 els.globalLogoutButton.addEventListener("click", logoutCurrentUser);
 els.adminRefreshButton.addEventListener("click", loadAdminData);
+els.compassRefreshButton?.addEventListener("click", () => loadCompassData());
+els.compassApplyFilters?.addEventListener("click", applyCompassFilters);
 els.brandRefreshButton.addEventListener("click", async () => {
   await loadProductCatalog();
   await loadProductOverrides();
