@@ -117,6 +117,10 @@
             <i data-lucide="sliders-horizontal"></i>
             <span>商品池调整</span>
           </button>
+          <button class="nav-item" data-view="compass">
+            <i data-lucide="radar"></i>
+            <span>达人选品罗盘</span>
+          </button>
         </nav>
 
         <div class="source-box">
@@ -450,6 +454,61 @@
           </div>
         </section>
 
+        <section class="admin-page compass-page hidden" data-view-panel="compass">
+          <div class="section-head">
+            <div>
+              <h2>达人选品罗盘</h2>
+              <p>分析达人在任务内的选款行为与偏好，不代表商品实际销售表现。</p>
+            </div>
+            <div class="admin-actions">
+              <button class="ghost-button" id="compassRefreshButton" type="button">
+                <i data-lucide="refresh-cw"></i><span>刷新分析</span>
+              </button>
+            </div>
+          </div>
+
+          <section class="compass-filter-panel" aria-label="达人选品罗盘筛选">
+            <div class="compass-filter-grid">
+              <label>
+                <span>达人</span>
+                <input id="compassCreatorQuery" type="search" placeholder="搜索达人名称" />
+              </label>
+              <label>
+                <span>任务</span>
+                <select id="compassTaskFilter"><option value="">全部任务</option></select>
+              </label>
+              <label>
+                <span>开始时间</span>
+                <input id="compassDateFrom" type="date" />
+              </label>
+              <label>
+                <span>结束时间</span>
+                <input id="compassDateTo" type="date" />
+              </label>
+              <label>
+                <span>品类</span>
+                <select id="compassCategoryFilter"><option value="">全部品类</option></select>
+              </label>
+              <label>
+                <span>数据置信度</span>
+                <select id="compassConfidenceFilter">
+                  <option value="">全部样本</option>
+                  <option value="数据不足">数据不足</option>
+                  <option value="初步倾向">初步倾向</option>
+                  <option value="稳定偏好">稳定偏好</option>
+                </select>
+              </label>
+              <button class="primary-button compass-filter-apply" id="compassApplyFilters" type="button">
+                <i data-lucide="sliders-horizontal"></i><span>应用筛选</span>
+              </button>
+            </div>
+          </section>
+
+          <div id="compassOverview"></div>
+          <div class="hidden" id="compassCreatorDetail"></div>
+          <div id="compassProductHeat"></div>
+        </section>
+
         <section class="admin-page hidden" data-view-panel="brand">
           <div class="section-head hidden">
             <div>
@@ -611,6 +670,22 @@
         </button>
         <div id="detailContent"></div>
       </div>
+    </div>
+
+    <div class="brand-edit-drawer hidden" id="brandEditDrawer" aria-hidden="true">
+      <button class="brand-edit-backdrop" data-action="close-brand-editor" type="button" aria-label="关闭商品编辑"></button>
+      <section class="brand-edit-panel" role="dialog" aria-modal="true" aria-labelledby="brandEditTitle">
+        <header class="brand-edit-header">
+          <div>
+            <p>商品编辑</p>
+            <h2 id="brandEditTitle">编辑商品</h2>
+          </div>
+          <button class="icon-button" data-action="close-brand-editor" type="button" aria-label="关闭商品编辑" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </header>
+        <div class="brand-edit-drawer-content" id="brandEditDrawerContent"></div>
+      </section>
     </div>
 
     <div class="toast hidden" id="toast"></div>
