@@ -163,6 +163,12 @@ const els = {
   adminSubmissionDateTo: document.getElementById("adminSubmissionDateTo"),
   adminSubmissionFilterReset: document.getElementById("adminSubmissionFilterReset"),
   creatorRequestSummary: document.getElementById("creatorRequestSummary"),
+  accountRefreshButton: document.getElementById("accountRefreshButton"),
+  accountActiveCreatorCount: document.getElementById("accountActiveCreatorCount"),
+  accountActiveTaskCount: document.getElementById("accountActiveTaskCount"),
+  accountTaskProductCount: document.getElementById("accountTaskProductCount"),
+  accountScopeMeta: document.getElementById("accountScopeMeta"),
+  creatorScopeSummary: document.getElementById("creatorScopeSummary"),
   adminLoginPanel: document.getElementById("adminLoginPanel"),
   adminDashboard: document.getElementById("adminDashboard"),
   adminEmailInput: document.getElementById("adminEmailInput"),
@@ -464,6 +470,69 @@ function renderBrandTaskManager() {
         )
         .join("")
     : `<div class="empty">尚未创建选款任务。勾选货品、选择达人后即可创建。</div>`;
+
+  renderAccountManagement();
+}
+
+function renderAccountManagement() {
+  if (!els.creatorScopeSummary) return;
+
+  const activeCreators = state.brandCreators.filter((creator) => creator.status === "active");
+  const activeTasks = state.brandTasks.filter((task) => task.status === "active");
+  const taskById = new Map(activeTasks.map((task) => [task.id, task]));
+  const taskProductCount = state.brandTaskProducts.reduce((map, item) => {
+    if (!taskById.has(item.task_id)) return map;
+    map.set(item.task_id, (map.get(item.task_id) || 0) + 1);
+    return map;
+  }, new Map());
+  const tasksByCreator = state.brandTaskAssignments.reduce((map, assignment) => {
+    const task = taskById.get(assignment.task_id);
+    if (!task) return map;
+    const list = map.get(assignment.creator_user_id) || [];
+    list.push(task);
+    map.set(assignment.creator_user_id, list);
+    return map;
+  }, new Map());
+
+  if (els.accountActiveCreatorCount) els.accountActiveCreatorCount.textContent = activeCreators.length;
+  if (els.accountActiveTaskCount) els.accountActiveTaskCount.textContent = activeTasks.length;
+  if (els.accountTaskProductCount) {
+    els.accountTaskProductCount.textContent = [...taskProductCount.values()].reduce((sum, count) => sum + count, 0);
+  }
+  if (els.accountScopeMeta) els.accountScopeMeta.textContent = `${activeCreators.length} 位达人`;
+
+  els.creatorScopeSummary.innerHTML = activeCreators.length
+    ? activeCreators
+        .map((creator) => {
+          const creatorTasks = tasksByCreator.get(creator.user_id) || [];
+          const visibleProductCount = creatorTasks.reduce(
+            (sum, task) => sum + (taskProductCount.get(task.id) || 0),
+            0
+          );
+          return `
+            <article class="account-scope-row">
+              <div class="account-creator-main">
+                <strong>${escapeHtml(creator.creator_name)}</strong>
+                <small>${escapeHtml(creator.email)}</small>
+                <span class="request-status status-approved">已开通</span>
+              </div>
+              <div class="account-scope-main">
+                <strong>${creatorTasks.length ? `已分配 ${creatorTasks.length} 个活动任务` : "当前未分配活动任务"}</strong>
+                <small>${creatorTasks.length ? `任务内可见 ${visibleProductCount} 款商品` : "创建并分配任务后，达人即可看到对应商品池"}</small>
+                ${creatorTasks.length
+                  ? `<div class="account-task-tags">${creatorTasks
+                      .map(
+                        (task) =>
+                          `<span>${escapeHtml(task.title)} · ${taskProductCount.get(task.id) || 0} 款 · 截止 ${escapeHtml(formatTaskDate(task.due_at))}</span>`
+                      )
+                      .join("")}</div>`
+                  : ""}
+              </div>
+            </article>
+          `;
+        })
+        .join("")
+    : `<div class="empty">暂无已开通达人。审核新达人申请后，其任务与可见商品范围会显示在这里。</div>`;
 }
 
 async function loadBrandTaskData(options = {}) {
@@ -833,6 +902,7 @@ function setRoleUi(role) {
   state.currentRole = role;
   const creatorOnly = role === "creator";
   navButtonsFor("admin").forEach((button) => button.classList.toggle("hidden", creatorOnly));
+  navButtonsFor("accounts").forEach((button) => button.classList.toggle("hidden", creatorOnly));
   navButtonsFor("brand").forEach((button) => button.classList.toggle("hidden", creatorOnly));
   navButtonsFor("compass").forEach((button) => button.classList.toggle("hidden", creatorOnly));
   els.userPill.classList.toggle("hidden", role === "guest");
@@ -1309,6 +1379,7 @@ function renderAdmin() {
         .join("")
     : `<div class="empty">暂无达人开户申请</div>`;
 
+  renderAccountManagement();
 }
 
 function openSubmissionDetail(submissionId) {
@@ -2136,7 +2207,7 @@ function applyCompassFilters() {
 }
 
 function setView(view) {
-  if (state.currentRole === "creator" && (view === "admin" || view === "brand" || view === "compass")) {
+  if (state.currentRole === "creator" && (view === "admin" || view === "accounts" || view === "brand" || view === "compass")) {
     view = "selection";
   }
   state.view = view;
@@ -2147,7 +2218,7 @@ function setView(view) {
     panel.classList.toggle("hidden", panel.dataset.viewPanel !== view);
   });
   if (els.statusStrip) {
-    els.statusStrip.classList.toggle("hidden", view === "brand" || view === "compass");
+    els.statusStrip.classList.toggle("hidden", view === "accounts" || view === "brand" || view === "compass");
   }
   renderCreatorTaskPanel();
   if (view !== "selection") {
@@ -2155,7 +2226,7 @@ function setView(view) {
   } else {
     document.querySelector(".content-grid").classList.remove("hidden");
   }
-  if (state.currentRole === "brand" && (view === "admin" || view === "brand" || view === "compass")) {
+  if (state.currentRole === "brand" && (view === "admin" || view === "accounts" || view === "brand" || view === "compass")) {
     syncAccessSession();
     if (view === "compass") loadCompassData({ silent: true });
   }
@@ -2337,7 +2408,7 @@ async function syncAccessSession() {
   await loadProductOverrides({ silent: true });
   renderProducts();
   renderSelected();
-  if (state.view === "admin" || state.view === "brand" || state.view === "compass") setView("selection");
+  if (state.view === "admin" || state.view === "accounts" || state.view === "brand" || state.view === "compass") setView("selection");
 }
 
 async function loginAdmin(source = "admin") {
@@ -3757,6 +3828,9 @@ els.adminLogoutButton.addEventListener("click", logoutCurrentUser);
 els.brandLogoutButton.addEventListener("click", logoutCurrentUser);
 els.globalLogoutButton.addEventListener("click", logoutCurrentUser);
 els.adminRefreshButton.addEventListener("click", loadAdminData);
+els.accountRefreshButton?.addEventListener("click", async () => {
+  await Promise.all([loadAdminData(), loadBrandTaskData({ silent: true })]);
+});
 els.compassRefreshButton?.addEventListener("click", () => loadCompassData());
 els.compassApplyFilters?.addEventListener("click", applyCompassFilters);
 els.brandRefreshButton.addEventListener("click", async () => {

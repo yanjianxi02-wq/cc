@@ -113,6 +113,10 @@
             <i data-lucide="layout-dashboard"></i>
             <span>后台汇总</span>
           </button>
+          <button class="nav-item" data-view="accounts">
+            <i data-lucide="shield-check"></i>
+            <span>账号权限管理</span>
+          </button>
           <button class="nav-item" data-view="brand">
             <i data-lucide="sliders-horizontal"></i>
             <span>商品池调整</span>
@@ -425,17 +429,6 @@
               <div><span>热门品类</span><strong id="adminHotCategory">-</strong></div>
             </div>
 
-            <div class="admin-card request-card">
-              <div class="request-head">
-                <div>
-                  <h3>达人开通审核</h3>
-                  <p>新达人提交申请后，会在这里等待品牌方确认。</p>
-                </div>
-                <strong id="pendingRequestCount">0 待审核</strong>
-              </div>
-              <div id="creatorRequestSummary"></div>
-            </div>
-
             <div class="admin-panels">
               <div class="admin-card admin-submission-card">
                 <div class="admin-submission-head">
@@ -460,6 +453,48 @@
                 <div id="creatorSummary"></div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section class="admin-page hidden" data-view-panel="accounts">
+          <div class="section-head">
+            <div>
+              <h2>账号权限管理</h2>
+              <p>审核达人开通申请，并查看每位达人当前可见的选款任务与商品范围。</p>
+            </div>
+            <div class="admin-actions">
+              <button class="ghost-button" id="accountRefreshButton" type="button">
+                <i data-lucide="refresh-cw"></i><span>刷新</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-kpis account-kpis">
+            <div><span>已开通达人</span><strong id="accountActiveCreatorCount">0</strong></div>
+            <div><span>待审核申请</span><strong id="pendingRequestCount">0</strong></div>
+            <div><span>进行中任务</span><strong id="accountActiveTaskCount">0</strong></div>
+            <div><span>活动任务商品</span><strong id="accountTaskProductCount">0</strong></div>
+          </div>
+
+          <div class="admin-card request-card">
+            <div class="request-head">
+              <div>
+                <h3>达人开通审核</h3>
+                <p>新达人提交申请后，在此审核；通过后才能进入选款网站。</p>
+              </div>
+            </div>
+            <div id="creatorRequestSummary"></div>
+          </div>
+
+          <div class="admin-card account-scope-card">
+            <div class="request-head">
+              <div>
+                <h3>达人当前可见商品范围</h3>
+                <p>有进行中任务时，达人只可见对应任务商品；无活动任务时，标记为未分配任务。</p>
+              </div>
+              <strong id="accountScopeMeta">0 位达人</strong>
+            </div>
+            <div id="creatorScopeSummary"></div>
           </div>
         </section>
 
