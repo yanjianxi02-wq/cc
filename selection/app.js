@@ -57,6 +57,7 @@ const state = {
   creatorTasks: [],
   activeTaskId: localStorage.getItem("inmanActiveTaskId") || "",
   taskFeatureReady: false,
+  taskServiceError: "",
   currentSession: null,
   currentUser: null,
   currentRole: "guest",
@@ -146,6 +147,7 @@ const els = {
   globalLogoutButton: document.getElementById("globalLogoutButton"),
   modal: document.getElementById("detailModal"),
   detailContent: document.getElementById("detailContent"),
+  taskDeadlineValue: document.getElementById("taskDeadlineValue"),
   submitStatus: document.getElementById("submitStatus"),
   adminSubmitted: document.getElementById("adminSubmitted"),
   adminProductCount: document.getElementById("adminProductCount"),
@@ -275,6 +277,46 @@ function activeCreatorTask() {
   return state.creatorTasks.find((task) => task.id === state.activeTaskId) || null;
 }
 
+function taskServiceMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (message.includes("active creator account required") || message.includes("creator account is not active")) {
+    return "达人账号尚未审核通过，暂不能提交选款";
+  }
+  if (message.includes("selection task is unavailable")) {
+    return "当前选款任务已截止、关闭或未分配，暂不能提交";
+  }
+  if (message.includes("outside the available task pool") || message.includes("unavailable products")) {
+    return "部分已选商品已不在当前任务商品池内，请刷新后重新确认";
+  }
+  if (message.includes("task scoped submission is required")) {
+    return "当前选款未绑定有效任务，请刷新页面后重新选择任务";
+  }
+  return "任务服务暂不可用，当前已选清单已保留，请刷新页面后重试";
+}
+
+function renderCreatorTaskStatus() {
+  const task = activeCreatorTask();
+  if (els.taskDeadlineValue) {
+    if (state.currentRole === "creator" && !state.taskFeatureReady) {
+      els.taskDeadlineValue.textContent = "任务服务异常";
+    } else if (state.currentRole === "creator" && !task) {
+      els.taskDeadlineValue.textContent = "等待任务分配";
+    } else if (state.currentRole === "creator") {
+      els.taskDeadlineValue.textContent = formatTaskDate(task.due_at);
+    } else {
+      els.taskDeadlineValue.textContent = "--";
+    }
+  }
+  if (!els.submitStatus) return;
+  if (state.currentRole === "creator" && !state.taskFeatureReady) {
+    els.submitStatus.textContent = "暂不能提交";
+  } else if (state.currentRole === "creator" && !task) {
+    els.submitStatus.textContent = "暂无任务";
+  } else {
+    els.submitStatus.textContent = state.submitted || Boolean(task?.latest_submission_at) ? "已提交" : "选款中";
+  }
+}
+
 function resetCreatorSelection() {
   state.selected.clear();
   state.featured.clear();
@@ -285,16 +327,28 @@ function resetCreatorSelection() {
 
 function renderCreatorTaskPanel() {
   if (!els.creatorTaskPanel) return;
-  const showPanel =
-    state.currentRole === "creator" && state.taskFeatureReady && state.view === "selection";
+  const showPanel = state.currentRole === "creator" && state.view === "selection";
   els.creatorTaskPanel.classList.toggle("hidden", !showPanel);
+  els.creatorTaskPanel.classList.toggle("task-service-error", showPanel && !state.taskFeatureReady);
   if (!showPanel) return;
+
+  if (!state.taskFeatureReady) {
+    els.creatorTaskHint.textContent = "当前任务服务未正常响应，已选商品和备注不会丢失。";
+    els.creatorTaskSelect.innerHTML = `<option value="">暂不能读取任务</option>`;
+    els.creatorTaskSelect.disabled = true;
+    els.creatorTaskMeta.innerHTML = `<div class="empty">${escapeHtml(
+      state.taskServiceError || "任务服务暂不可用，请刷新页面后重试。"
+    )}</div>`;
+    renderCreatorTaskStatus();
+    return;
+  }
 
   if (!state.creatorTasks.length) {
     els.creatorTaskHint.textContent = "当前没有可进行的选款任务，请联系品牌方分配。";
     els.creatorTaskSelect.innerHTML = `<option value="">暂无任务</option>`;
     els.creatorTaskSelect.disabled = true;
     els.creatorTaskMeta.innerHTML = `<div class="empty">任务分配后，这里只会显示该任务指定的商品池。</div>`;
+    renderCreatorTaskStatus();
     return;
   }
 
@@ -318,6 +372,7 @@ function renderCreatorTaskPanel() {
     <span>${task.latest_submission_at ? `最近提交：${formatTaskDate(task.latest_submission_at)}` : "尚未提交"}</span>
     ${task.description ? `<p>${escapeHtml(task.description)}</p>` : ""}
   `;
+  renderCreatorTaskStatus();
 }
 
 function taskStatusLabel(status) {
@@ -448,13 +503,15 @@ async function loadCreatorTasks(options = {}) {
   if (error) {
     console.error(error);
     state.taskFeatureReady = false;
+    state.taskServiceError = taskServiceMessage(error);
     state.creatorTasks = [];
     state.activeTaskId = "";
     renderCreatorTaskPanel();
-    if (!options.silent) showToast("任务服务暂不可用，已回退到原商品池");
+    if (!options.silent) showToast(state.taskServiceError);
     return false;
   }
   state.taskFeatureReady = true;
+  state.taskServiceError = "";
   state.creatorTasks = data || [];
   if (!state.creatorTasks.some((task) => task.id === state.activeTaskId)) {
     state.activeTaskId = state.creatorTasks[0]?.id || "";
@@ -1099,7 +1156,7 @@ function renderSelected() {
   const selectedProducts = [...state.selected.values()];
   els.selectedCount.textContent = selectedProducts.length;
   els.drawerCount.textContent = selectedProducts.length;
-  els.submitStatus.textContent = state.submitted ? "已提交" : "选款中";
+  renderCreatorTaskStatus();
 
   if (!selectedProducts.length) {
     els.selectedDrawer.innerHTML = `<div class="empty">还没有选择商品</div>`;
@@ -2132,6 +2189,17 @@ async function submitSelection() {
   }
   if (state.submitting) return;
 
+  if (!state.taskFeatureReady) {
+    showToast(state.taskServiceError || "任务服务暂不可用，当前已选清单已保留，请刷新页面后重试");
+    return;
+  }
+
+  const task = activeCreatorTask();
+  if (!task) {
+    showToast("当前没有可提交的选款任务，请联系品牌方分配或重新开启任务");
+    return;
+  }
+
   state.creatorName = creatorName;
   localStorage.setItem("inmanCreatorName", creatorName);
   state.submitting = true;
@@ -2140,23 +2208,11 @@ async function submitSelection() {
     .forEach((button) => (button.disabled = true));
   showToast("正在提交选款...");
 
-  const task = activeCreatorTask();
-  if (state.taskFeatureReady && !task) {
-    state.submitting = false;
-    document
-      .querySelectorAll("#submitTopButton, #submitDrawerButton, #submitListButton")
-      .forEach((button) => (button.disabled = false));
-    showToast("请先选择品牌方分配的选款任务");
-    return;
-  }
-  const { error } = state.taskFeatureReady
-    ? await cloud.rpc("submit_task_selection", {
-        p_task_id: task.id,
-        p_items: selectionPayload(),
-      })
-    : await cloud.rpc("submit_selection", {
-        p_items: selectionPayload(),
-      });
+  // Legacy unscoped submission is intentionally disabled by the database migration.
+  const { error } = await cloud.rpc("submit_task_selection", {
+    p_task_id: task.id,
+    p_items: selectionPayload(),
+  });
 
   state.submitting = false;
   document
@@ -2164,13 +2220,13 @@ async function submitSelection() {
     .forEach((button) => (button.disabled = false));
   if (error) {
     console.error(error);
-    showToast("提交失败，请稍后重试");
+    showToast(taskServiceMessage(error));
     return;
   }
 
   state.submitted = true;
   renderSelected();
-  if (state.taskFeatureReady) await loadCreatorTasks({ silent: true });
+  await loadCreatorTasks({ silent: true });
   showToast(`已成功提交 ${state.selected.size} 款`);
 }
 
@@ -2218,6 +2274,7 @@ async function syncAccessSession() {
     state.brandCreators = [];
     state.creatorTasks = [];
     state.taskFeatureReady = false;
+    state.taskServiceError = "";
     setRoleUi("guest");
     setAppVisibility(false);
     setAdminLoggedIn(false);
@@ -2422,6 +2479,7 @@ async function logoutCurrentUser() {
   state.brandTaskCreatorIds.clear();
   state.creatorTasks = [];
   state.taskFeatureReady = false;
+  state.taskServiceError = "";
   state.activeTaskId = "";
   resetCreatorSelection();
   setAdminLoggedIn(false);
@@ -2524,15 +2582,19 @@ async function loadProductCatalog(options = {}) {
     renderCatalogMeta();
     return;
   }
-  if (state.currentRole === "creator" && state.taskFeatureReady && !state.activeTaskId) {
-    replaceBaseProductPool([], "cloud");
+  if (state.currentRole === "creator" && (!state.taskFeatureReady || !state.activeTaskId)) {
+    // Do not fall back to a global catalog. Keep selections in memory while the task service recovers.
+    baseProductPool.splice(0, baseProductPool.length);
+    productPool.splice(0, productPool.length);
+    state.catalogSource = "cloud";
+    initFilters();
+    renderProducts();
+    renderCatalogMeta();
     return;
   }
   const productRequest =
     state.currentRole === "creator"
-      ? state.taskFeatureReady
-        ? cloud.rpc("get_creator_task_products", { p_task_id: state.activeTaskId })
-        : cloud.rpc("get_creator_visible_products")
+      ? cloud.rpc("get_creator_task_products", { p_task_id: state.activeTaskId })
       : cloud
           .from("product_catalog")
           .select("*")
@@ -2542,15 +2604,20 @@ async function loadProductCatalog(options = {}) {
   const { data, error } = await productRequest;
   if (error) {
     console.error(error);
-    if (state.currentRole === "creator" && state.taskFeatureReady) {
-      replaceBaseProductPool([], "cloud");
+    if (state.currentRole === "creator") {
+      state.taskFeatureReady = false;
+      state.taskServiceError = taskServiceMessage(error);
+      state.creatorTasks = [];
+      state.activeTaskId = "";
+      baseProductPool.splice(0, baseProductPool.length);
+      productPool.splice(0, productPool.length);
+      state.catalogSource = "cloud";
+      initFilters();
+      renderProducts();
+      renderCreatorTaskPanel();
     }
     if (!options.silent) {
-      showToast(
-        state.currentRole === "creator" && state.taskFeatureReady
-          ? "任务商品池读取失败，请重新选择任务"
-          : "云端新品池读取失败，将继续使用本地商品池"
-      );
+      showToast(state.currentRole === "creator" ? state.taskServiceError : "云端新品池读取失败，将继续使用本地商品池");
     }
     renderCatalogMeta();
     return;
