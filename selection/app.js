@@ -209,6 +209,7 @@ const els = {
   brandFrontClearButton: document.getElementById("brandFrontClearButton"),
   brandNewProductsFile: document.getElementById("brandNewProductsFile"),
   brandNewProductsButton: document.getElementById("brandNewProductsButton"),
+  brandNewProductsTemplateButton: document.getElementById("brandNewProductsTemplateButton"),
   brandCatalogMeta: document.getElementById("brandCatalogMeta"),
   brandTaskCount: document.getElementById("brandTaskCount"),
   brandTaskTitle: document.getElementById("brandTaskTitle"),
@@ -221,6 +222,7 @@ const els = {
   brandTaskList: document.getElementById("brandTaskList"),
   brandImportFile: document.getElementById("brandImportFile"),
   brandImportButton: document.getElementById("brandImportButton"),
+  brandImportTemplateButton: document.getElementById("brandImportTemplateButton"),
   brandProductSearch: document.getElementById("brandProductSearch"),
   brandProductEditor: document.getElementById("brandProductEditor"),
   brandEditDrawer: document.getElementById("brandEditDrawer"),
@@ -3386,7 +3388,94 @@ function parseImportSortPriority(value) {
   return normalizeCreatorSortPriority(text) ?? NaN;
 }
 
-function readImportRows(file) {
+const IMPORT_SCHEMAS = {
+  catalog: {
+    title: "新品导入模板",
+    fileName: "新品导入模板",
+    sheetName: "新品导入",
+    fields: [
+      { header: "款号", example: "F18628781", note: "必填；按款号新增或匹配已有商品。" },
+      { header: "商品名称", example: "棉麻衬衣", note: "新增商品建议填写。" },
+      { header: "品类", example: "衬衣", note: "用于商品分类与达人端筛选。" },
+      { header: "季节", example: "秋", note: "仅填：春、夏、秋、冬。" },
+      { header: "上新日期", example: "2026-07-20", note: "建议使用 YYYY-MM-DD。" },
+      { header: "达播价", example: "139.9", note: "只保留一位小数。" },
+      { header: "现货库存", example: "320", note: "只填整数。" },
+      { header: "预售库存/产能", example: "15天不限量", note: "可填数量或产能说明。" },
+      { header: "产品等级", example: "S", note: "仅填：S、A、B、C。" },
+      { header: "风格线", example: "田园-复古", note: "用于达人端筛选。" },
+      { header: "图片地址", example: "https://example.com/product.jpg", note: "可选；单款图片也可在商品池中上传或粘贴。" },
+      { header: "达人端排序", example: "10", note: "正整数越小越靠前；留空或填“自动”表示自动排序。" },
+    ],
+  },
+  overrides: {
+    title: "商品批量修改模板",
+    fileName: "商品批量修改模板",
+    sheetName: "批量修改",
+    fields: [
+      { header: "款号", example: "F18628781", note: "必填；用于匹配当前商品池。" },
+      { header: "达播价", example: "139.9", note: "留空不修改；只保留一位小数。" },
+      { header: "产品等级", example: "S", note: "留空不修改；仅填：S、A、B、C。" },
+      { header: "达人可见", example: "达人可见", note: "留空不修改；仅填：达人可见 或 达人不可见。" },
+      { header: "风格线", example: "田园-复古", note: "留空不修改。" },
+      { header: "达人端排序", example: "10", note: "留空不修改；正整数越小越靠前，填“自动”清除前排排序。" },
+    ],
+  },
+};
+
+function normalizeImportHeader(value) {
+  return String(value || "").trim().replace(/\s+/g, "").toLowerCase();
+}
+
+function getImportSchema(schemaKey) {
+  return IMPORT_SCHEMAS[schemaKey] || null;
+}
+
+function validateFixedImportHeaders(headers, schemaKey) {
+  const schema = getImportSchema(schemaKey);
+  if (!schema) throw new Error("import-schema-missing");
+  const existingHeaders = new Set((headers || []).map(normalizeImportHeader).filter(Boolean));
+  const missingHeaders = schema.fields
+    .map((field) => field.header)
+    .filter((header) => !existingHeaders.has(normalizeImportHeader(header)));
+  if (!missingHeaders.length) return;
+  const error = new Error("import-header-mismatch");
+  error.missingHeaders = missingHeaders;
+  throw error;
+}
+
+function downloadImportTemplate(schemaKey) {
+  const schema = getImportSchema(schemaKey);
+  if (!schema || !window.XLSX) {
+    showToast("表格模板组件加载失败，请刷新后重试");
+    return;
+  }
+  const headers = schema.fields.map((field) => field.header);
+  const templateSheet = window.XLSX.utils.aoa_to_sheet([headers, headers.map(() => "")]);
+  templateSheet["!cols"] = schema.fields.map((field) => ({
+    wch: Math.max(field.header.length * 2 + 4, String(field.example).length + 4, 14),
+  }));
+  templateSheet["!autofilter"] = {
+    ref: `A1:${window.XLSX.utils.encode_col(headers.length - 1)}2`,
+  };
+  const guideRows = [
+    ["导入说明", schema.title],
+    ["填写规则", "请从第二行开始填写；表头可调整顺序但不能改名或删除；其他额外列会被忽略。"],
+    ["批量安全", schemaKey === "overrides" ? "空白单元格保持当前数据不变。" : "空白字段不会覆盖已有值；新款缺失字段会保持空白或默认值。"],
+    [],
+    ["固定表头", "填写示例", "字段说明"],
+    ...schema.fields.map((field) => [field.header, field.example, field.note]),
+  ];
+  const guideSheet = window.XLSX.utils.aoa_to_sheet(guideRows);
+  guideSheet["!cols"] = [{ wch: 18 }, { wch: 34 }, { wch: 52 }];
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, templateSheet, schema.sheetName);
+  window.XLSX.utils.book_append_sheet(workbook, guideSheet, "填写说明");
+  window.XLSX.writeFile(workbook, `${schema.fileName}.xlsx`);
+  showToast(`已下载${schema.title}`);
+}
+
+function readImportTable(file) {
   return new Promise((resolve, reject) => {
     if (!window.XLSX) {
       reject(new Error("xlsx-not-loaded"));
@@ -3397,10 +3486,16 @@ function readImportRows(file) {
       try {
         const workbook = window.XLSX.read(reader.result, { type: "array" });
         const firstSheetName = workbook.SheetNames[0];
-        const rows = window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], {
+        const worksheet = workbook.Sheets[firstSheetName];
+        const headerRow = window.XLSX.utils.sheet_to_json(worksheet, {
+          header: 1,
+          defval: "",
+          blankrows: false,
+        })[0] || [];
+        const rows = window.XLSX.utils.sheet_to_json(worksheet, {
           defval: "",
         });
-        resolve(rows);
+        resolve({ rows, headers: headerRow });
       } catch (error) {
         reject(error);
       }
@@ -3408,6 +3503,18 @@ function readImportRows(file) {
     reader.onerror = () => reject(new Error("file-read-failed"));
     reader.readAsArrayBuffer(file);
   });
+}
+
+function readImportRows(file) {
+  return readImportTable(file).then(({ rows }) => rows);
+}
+
+function importErrorMessage(error, fallbackMessage) {
+  if (error?.message === "xlsx-not-loaded") return "表格解析组件加载失败";
+  if (error?.message === "import-header-mismatch") {
+    return `表头不完整，缺少：${(error.missingHeaders || []).join("、")}。请下载模板后重试`;
+  }
+  return fallbackMessage;
 }
 
 function buildImportPayload(rows, userEmail) {
@@ -3574,7 +3681,8 @@ async function importNewProducts() {
   els.brandNewProductsButton.disabled = true;
   showToast("正在更新新品池...");
   try {
-    const rows = await readImportRows(file);
+    const { rows, headers } = await readImportTable(file);
+    validateFixedImportHeaders(headers, "catalog");
     const {
       data: { user },
     } = await cloud.auth.getUser();
@@ -3597,7 +3705,7 @@ async function importNewProducts() {
     renderBrandProductEditor();
   } catch (error) {
     console.error(error);
-    showToast(error.message === "xlsx-not-loaded" ? "表格解析组件加载失败" : "新品表读取失败");
+    showToast(importErrorMessage(error, "新品表读取失败"));
   } finally {
     els.brandNewProductsButton.disabled = false;
   }
@@ -3616,7 +3724,8 @@ async function importProductOverrides() {
   els.brandImportButton.disabled = true;
   showToast("正在读取表格...");
   try {
-    const rows = await readImportRows(file);
+    const { rows, headers } = await readImportTable(file);
+    validateFixedImportHeaders(headers, "overrides");
     const {
       data: { user },
     } = await cloud.auth.getUser();
@@ -3638,7 +3747,7 @@ async function importProductOverrides() {
     renderBrandProductEditor();
   } catch (error) {
     console.error(error);
-    showToast(error.message === "xlsx-not-loaded" ? "表格解析组件加载失败" : "表格读取失败");
+    showToast(importErrorMessage(error, "表格读取失败"));
   } finally {
     els.brandImportButton.disabled = false;
   }
@@ -4105,8 +4214,14 @@ if (els.brandFrontClearButton) {
 if (els.brandImportButton) {
   els.brandImportButton.addEventListener("click", importProductOverrides);
 }
+if (els.brandImportTemplateButton) {
+  els.brandImportTemplateButton.addEventListener("click", () => downloadImportTemplate("overrides"));
+}
 if (els.brandNewProductsButton) {
   els.brandNewProductsButton.addEventListener("click", importNewProducts);
+}
+if (els.brandNewProductsTemplateButton) {
+  els.brandNewProductsTemplateButton.addEventListener("click", () => downloadImportTemplate("catalog"));
 }
 if (els.brandCreateTaskButton) {
   els.brandCreateTaskButton.addEventListener("click", createSelectionTask);
