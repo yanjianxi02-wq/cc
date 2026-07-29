@@ -47,6 +47,7 @@ const state = {
   brandFrontPreviewVisible: false,
   brandFrontDraggingSku: "",
   brandEditingSku: "",
+  productImageDrafts: new Map(),
   selectedDraggingId: "",
   adminSavingSku: "",
   productOverrides: new Map(),
@@ -877,6 +878,136 @@ function readFileAsDataUrl(file) {
   });
 }
 
+// The catalog stores the override image as a data URL. Accept large source files,
+// but optimize them before storing so the catalog stays responsive and reliable.
+const IMAGE_SOURCE_PREFERRED_BYTES = 500 * 1024 * 1024;
+const IMAGE_BROWSER_HARD_LIMIT_BYTES = 800 * 1024 * 1024;
+const IMAGE_STORAGE_TARGET_BYTES = Math.floor(1.4 * 1024 * 1024);
+const IMAGE_STANDARD_MAX_EDGE = 2600;
+const IMAGE_LARGE_SOURCE_MAX_EDGE = 1800;
+const IMAGE_MAX_CANVAS_PIXELS = 8_000_000;
+
+function formatImageBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(value >= 100 ? 0 : 1)}MB`;
+  if (value >= 1024) return `${Math.ceil(value / 1024)}KB`;
+  return `${value}B`;
+}
+
+function getImageFileName(name, extension = "webp") {
+  const baseName = String(name || "商品图片").replace(/\.[^.]+$/, "") || "商品图片";
+  return `${baseName}.${extension}`;
+}
+
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("image-decode-failed"));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("image-compress-failed"))), type, quality);
+  });
+}
+
+function fitImageDimensions(width, height, maxEdge) {
+  const pixelScale = Math.sqrt(IMAGE_MAX_CANVAS_PIXELS / Math.max(width * height, 1));
+  const edgeScale = Math.min(maxEdge / Math.max(width, 1), maxEdge / Math.max(height, 1));
+  const scale = Math.min(1, pixelScale, edgeScale);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+async function optimizeImageForStorage(file) {
+  if (!file?.type?.startsWith("image/")) throw new Error("image-type-invalid");
+  if (file.size > IMAGE_BROWSER_HARD_LIMIT_BYTES) throw new Error("image-source-too-large");
+  if (file.size <= IMAGE_STORAGE_TARGET_BYTES) {
+    return { file, compressed: false, sourceSize: file.size, outputSize: file.size };
+  }
+
+  const image = await loadImageFromFile(file);
+  const maxEdge = file.size > IMAGE_SOURCE_PREFERRED_BYTES
+    ? IMAGE_LARGE_SOURCE_MAX_EDGE
+    : IMAGE_STANDARD_MAX_EDGE;
+  let { width, height } = fitImageDimensions(image.naturalWidth || image.width, image.naturalHeight || image.height, maxEdge);
+  let lastBlob = null;
+
+  for (let attempt = 0; attempt < 7; attempt += 1) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("image-compress-failed");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+
+    const quality = Math.max(0.48, 0.88 - attempt * 0.06);
+    lastBlob = await canvasToBlob(canvas, "image/webp", quality);
+    if (lastBlob.size <= IMAGE_STORAGE_TARGET_BYTES) {
+      return {
+        file: new File([lastBlob], getImageFileName(file.name), { type: "image/webp" }),
+        compressed: true,
+        sourceSize: file.size,
+        outputSize: lastBlob.size,
+      };
+    }
+
+    const scale = Math.min(0.82, Math.max(0.45, Math.sqrt(IMAGE_STORAGE_TARGET_BYTES / lastBlob.size) * 0.92));
+    // Never enlarge a small source image while trying to reduce its file size.
+    const nextWidth = Math.max(1, Math.round(width * scale));
+    const nextHeight = Math.max(1, Math.round(height * scale));
+    if (nextWidth === width && nextHeight === height) break;
+    width = nextWidth;
+    height = nextHeight;
+  }
+
+  if (!lastBlob || lastBlob.size > IMAGE_STORAGE_TARGET_BYTES) throw new Error("image-compress-insufficient");
+  return {
+    file: new File([lastBlob], getImageFileName(file.name), { type: "image/webp" }),
+    compressed: true,
+    sourceSize: file.size,
+    outputSize: lastBlob.size,
+  };
+}
+
+function imageDraftHint(sku, hasOverrideImage) {
+  const draft = state.productImageDrafts.get(sku);
+  if (!draft) return hasOverrideImage ? "当前使用已上传图片" : "未上传新图则保留当前图片";
+  const source = draft.source === "paste" ? "已粘贴图片" : "已选择图片";
+  const size = formatImageBytes(draft.file.size);
+  return draft.file.size > IMAGE_STORAGE_TARGET_BYTES
+    ? `${source}（${size}），保存时自动压缩`
+    : `${source}（${size}），保存时将直接使用`;
+}
+
+function updateImageDraftStatus(sku) {
+  const status = document.querySelector(`[data-image-upload-status="${sku}"]`);
+  const product = productPool.find((item) => item.sku === sku);
+  if (!status || !product) return;
+  status.textContent = imageDraftHint(sku, Boolean(state.productOverrides.get(sku)?.image_url));
+}
+
+function stageImageDraft(sku, file, source) {
+  if (!file?.type?.startsWith("image/")) throw new Error("image-type-invalid");
+  if (file.size > IMAGE_BROWSER_HARD_LIMIT_BYTES) throw new Error("image-source-too-large");
+  state.productImageDrafts.set(sku, { file, source });
+  updateImageDraftStatus(sku);
+}
+
 const BRAND_ADMIN_EMAILS = new Set([
   "yanjianxi02@gmail.com",
   "huangshaoqing@inman.cc",
@@ -1526,6 +1657,7 @@ function renderBrandProductEditDrawer() {
   const baseProduct = baseProductPool.find((item) => item.sku === product.sku) || product;
   const saving = state.adminSavingSku === product.sku;
   const hasOverrideImage = Boolean(override.image_url);
+  const imageHint = imageDraftHint(product.sku, hasOverrideImage);
   const currentLevel = override.plan_level || product.level || "";
   const sortPriority = productSortPriority(product, override);
 
@@ -1582,10 +1714,18 @@ function renderBrandProductEditDrawer() {
         <input data-override-sku="${product.sku}" data-override-field="style" value="${escapeHtml(override.style || product.style || "")}" />
       </label>
       <label class="brand-edit-image-field">
-        <span>本地图片</span>
+        <span>本地上传</span>
         <input data-override-sku="${product.sku}" data-override-field="image_file" type="file" accept="image/*" />
-        <small class="field-hint">${hasOverrideImage ? "当前使用已上传图片" : "未上传新图则保留当前图片"}</small>
+        <small class="field-hint" data-image-upload-status="${product.sku}">${imageHint}</small>
       </label>
+      <div class="brand-image-paste-zone" data-action="focus-image-paste" data-id="${product.sku}" data-image-paste-zone="${product.sku}" tabindex="0" role="button" aria-label="粘贴图片">
+        <i data-lucide="clipboard-paste"></i>
+        <div>
+          <strong>粘贴图片</strong>
+          <small>点击后按 Ctrl+V，可直接粘贴截图或复制的图片</small>
+        </div>
+      </div>
+      <p class="brand-image-policy">支持上传或粘贴图片。源图 500MB 以内可直接处理；超过时保存前会自动加强压缩。为保证云端稳定，超过 1.4MB 的图片都会压缩为展示版本。</p>
     </div>
     <footer class="brand-edit-footer">
       <button class="ghost-button" data-action="reset-override" data-id="${product.sku}" type="button" ${saving ? "disabled" : ""}>恢复BI原始值</button>
@@ -2866,11 +3006,18 @@ async function collectOverrideDraft(sku) {
     draft[field.dataset.overrideField] = field.value.trim();
   });
   let imageUrl = null;
-  if (draft.image_file) {
-    if (draft.image_file.size > 1.5 * 1024 * 1024) {
-      throw new Error("image-too-large");
-    }
-    imageUrl = await readFileAsDataUrl(draft.image_file);
+  let imageCompressed = false;
+  let imageOutputSize = null;
+  const stagedImage = state.productImageDrafts.get(sku)?.file || draft.image_file;
+  if (stagedImage) {
+    const optimizedImage = await optimizeImageForStorage(stagedImage);
+    state.productImageDrafts.set(sku, {
+      file: optimizedImage.file,
+      source: state.productImageDrafts.get(sku)?.source || "upload",
+    });
+    imageUrl = await readFileAsDataUrl(optimizedImage.file);
+    imageCompressed = optimizedImage.compressed;
+    imageOutputSize = optimizedImage.outputSize;
   } else {
     imageUrl = state.productOverrides.get(sku)?.image_url || null;
   }
@@ -2886,6 +3033,8 @@ async function collectOverrideDraft(sku) {
     creator_sort_priority:
       draft.is_hidden === "true" ? null : product ? productSortPriority(product) : null,
     is_hidden: draft.is_hidden === "true",
+    image_compressed: imageCompressed,
+    image_output_size: imageOutputSize,
   };
 }
 
@@ -2945,8 +3094,16 @@ async function saveProductOverride(sku) {
   try {
     draft = await collectOverrideDraft(sku);
   } catch (error) {
-    if (error.message === "image-too-large") {
-      showToast("图片请控制在1.5MB以内");
+    if (error.message === "image-source-too-large") {
+      showToast("图片超过浏览器可安全处理的范围，请先压缩后再试");
+      return;
+    }
+    if (error.message === "image-type-invalid") {
+      showToast("请上传或粘贴图片文件");
+      return;
+    }
+    if (/image-(decode|compress)/.test(error.message || "")) {
+      showToast("图片自动压缩失败，请换用 JPG、PNG 或 WebP 后重试");
       return;
     }
     showToast("图片读取失败");
@@ -2973,8 +3130,9 @@ async function saveProductOverride(sku) {
     renderBrandProductEditor();
     return;
   }
+  const { image_compressed: imageCompressed, image_output_size: imageOutputSize, ...overrideDraft } = draft;
   const payload = {
-    ...draft,
+    ...overrideDraft,
     updated_by: user?.email || "",
     updated_at: new Date().toISOString(),
   };
@@ -2986,7 +3144,9 @@ async function saveProductOverride(sku) {
     renderBrandProductEditor();
     return;
   }
-  showToast(priorityUnavailable ? "其他配置已保存，达人排序需先升级云端" : "商品配置已保存");
+  state.productImageDrafts.delete(sku);
+  const imageMessage = imageCompressed ? `图片已自动压缩为 ${formatImageBytes(imageOutputSize)} 并保存` : "商品配置已保存";
+  showToast(priorityUnavailable ? "其他配置已保存，达人排序需先升级云端" : imageMessage);
   await loadProductCatalog({ silent: true });
   await loadProductOverrides({ silent: true });
   renderAdmin();
@@ -3489,6 +3649,7 @@ async function resetProductOverride(sku) {
     showToast("云端后台尚未完成配置");
     return;
   }
+  state.productImageDrafts.delete(sku);
   state.adminSavingSku = sku;
   renderBrandProductEditor();
   const { error } = await cloud.from("product_overrides").delete().eq("sku", sku);
@@ -3570,6 +3731,11 @@ document.addEventListener("click", (event) => {
   if (action === "preview") openImagePreview(id);
   if (action === "remove") toggleProduct(id);
   if (action === "edit-override") openBrandProductEditor(id);
+  if (action === "focus-image-paste") {
+    const pasteZone = document.querySelector(`[data-image-paste-zone="${id}"]`);
+    pasteZone?.focus();
+    showToast("现在可按 Ctrl+V 粘贴图片");
+  }
   if (action === "close-brand-editor") closeBrandProductEditor();
   if (action === "save-override") saveProductOverride(id);
   if (action === "reset-override") resetProductOverride(id);
@@ -3688,6 +3854,14 @@ document.addEventListener("change", (event) => {
   const remarkId = event.target.dataset.remark;
   const brandSelectSku = event.target.dataset.brandSelect;
   const taskCreatorId = event.target.dataset.taskCreator;
+  if (event.target.dataset.overrideField === "image_file") {
+    try {
+      stageImageDraft(event.target.dataset.overrideSku, event.target.files?.[0], "upload");
+    } catch (error) {
+      showToast(error.message === "image-source-too-large" ? "图片超过浏览器可安全处理的范围，请先压缩后再试" : "请上传图片文件");
+    }
+    return;
+  }
   if (taskCreatorId) {
     if (event.target.checked) state.brandTaskCreatorIds.add(taskCreatorId);
     else state.brandTaskCreatorIds.delete(taskCreatorId);
@@ -3710,6 +3884,25 @@ document.addEventListener("change", (event) => {
     syncRemarkFields(remarkId, nextValue, event.target);
   }
   if (intentId || remarkId) state.submitted = false;
+});
+
+document.addEventListener("paste", (event) => {
+  const pasteZone = event.target.closest("[data-image-paste-zone]");
+  if (!pasteZone) return;
+  const imageItem = [...(event.clipboardData?.items || [])].find((item) => item.type?.startsWith("image/"));
+  if (!imageItem) {
+    showToast("剪贴板中没有可用图片");
+    return;
+  }
+  const file = imageItem.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  try {
+    stageImageDraft(pasteZone.dataset.imagePasteZone, file, "paste");
+    showToast("图片已粘贴，保存时将自动处理");
+  } catch (error) {
+    showToast(error.message === "image-source-too-large" ? "图片超过浏览器可安全处理的范围，请先压缩后再试" : "粘贴图片失败");
+  }
 });
 
 document.addEventListener("input", (event) => {

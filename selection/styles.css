@@ -2018,6 +2018,54 @@ textarea:focus {
   grid-column: 1 / -1;
 }
 
+.brand-image-paste-zone {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(12, 124, 89, 0.42);
+  border-radius: 8px;
+  color: var(--green-dark);
+  background: #f5fbf8;
+  cursor: pointer;
+  outline: none;
+}
+
+.brand-image-paste-zone:hover,
+.brand-image-paste-zone:focus-visible {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(12, 124, 89, 0.12);
+}
+
+.brand-image-paste-zone svg {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
+.brand-image-paste-zone div {
+  display: grid;
+  gap: 3px;
+}
+
+.brand-image-paste-zone strong {
+  font-size: 13px;
+}
+
+.brand-image-paste-zone small,
+.brand-image-policy {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.brand-image-policy {
+  grid-column: 1 / -1;
+  margin: -6px 0 0;
+}
+
 .brand-edit-footer {
   display: flex;
   gap: 10px;
