@@ -631,9 +631,12 @@
               <div class="editor-head">
                 <div>
                   <h3>更新新品</h3>
-                  <p>导入 BI 商品上新表，按款号新增或更新云端商品池。</p>
+                  <p>下载固定模板后填写，按款号新增或更新云端商品池。</p>
                 </div>
                 <div class="catalog-update-actions">
+                  <button class="ghost-button" id="brandNewProductsTemplateButton" type="button">
+                    <i data-lucide="download"></i><span>下载新品模板</span>
+                  </button>
                   <label class="import-file">
                     <input id="brandNewProductsFile" type="file" accept=".xlsx,.xls,.csv" />
                     <span>选择新品表</span>
@@ -643,6 +646,18 @@
                   </button>
                 </div>
               </div>
+              <details class="import-schema-card">
+                <summary><strong>固定表头</strong><span>款号、商品名称、品类、季节、上新日期、达播价、现货库存、预售库存/产能、产品等级、风格线、图片地址、达人端排序</span></summary>
+                <div class="import-schema-body">
+                  <p><b>款号为必填匹配字段。</b>请从第二行开始填写；表头可调整顺序但不能改名或删除。空白字段不会覆盖已有值，其他额外列会被忽略。</p>
+                  <div class="import-schema-fields">
+                    <span><b>季节</b>：春 / 夏 / 秋 / 冬</span>
+                    <span><b>产品等级</b>：S / A / B / C</span>
+                    <span><b>达人端排序</b>：正整数；留空或填“自动”表示自动排序</span>
+                    <span><b>图片地址</b>：可选；单款图片仍可在下方直接上传或粘贴</span>
+                  </div>
+                </div>
+              </details>
               <div class="catalog-update-note" id="brandCatalogMeta">当前商品池 825 款</div>
             </div>
 
@@ -694,12 +709,24 @@
                 </button>
                 <label class="import-file">
                   <input id="brandImportFile" type="file" accept=".xlsx,.xls,.csv" />
-                  <span>导入表格</span>
+                  <span>选择批量修改表</span>
                 </label>
                 <button class="ghost-button" id="brandImportButton" type="button">
-                  <i data-lucide="file-up"></i><span>批量修改</span>
+                  <i data-lucide="file-up"></i><span>导入批量修改</span>
                 </button>
               </div>
+              <details class="import-schema-card import-schema-card-compact">
+                <summary><strong>批量修改固定表头</strong><span>款号、达播价、产品等级、达人可见、风格线、达人端排序</span></summary>
+                <div class="import-schema-body">
+                  <p><b>款号为必填匹配字段。</b>下载模板后填写；空白单元格保持当前数据不变。图片、现货库存与预售库存请使用单款编辑，避免误覆盖。</p>
+                  <div class="import-schema-actions">
+                    <button class="ghost-button" id="brandImportTemplateButton" type="button">
+                      <i data-lucide="download"></i><span>下载批量修改模板</span>
+                    </button>
+                    <span>达人可见：达人可见 / 达人不可见；排序：正整数或“自动”。</span>
+                  </div>
+                </div>
+              </details>
               <div id="brandProductEditor"></div>
             </div>
           </div>
