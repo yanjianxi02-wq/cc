@@ -86,7 +86,9 @@ const state = {
     category: "",
     confidence: "",
   },
-  productDensity: localStorage.getItem("inmanProductDensity") === "compact" ? "compact" : "standard",
+  productDensity: ["compact", "horizontal"].includes(localStorage.getItem("inmanProductDensity"))
+    ? localStorage.getItem("inmanProductDensity")
+    : "standard",
   visibleLimit: 60,
   filters: {
     category: "全部",
@@ -125,6 +127,7 @@ const els = {
   resultCount: document.getElementById("resultCount"),
   standardDensityButton: document.getElementById("standardDensityButton"),
   compactDensityButton: document.getElementById("compactDensityButton"),
+  horizontalDensityButton: document.getElementById("horizontalDensityButton"),
   categoryFilter: document.getElementById("categoryFilter"),
   levelFilter: document.getElementById("levelFilter"),
   priceFilter: document.getElementById("priceFilter"),
@@ -832,6 +835,74 @@ function priceText(product) {
   return price == null ? "价格待确认" : `￥${price}`;
 }
 
+function hasProductValue(value) {
+  const text = String(value ?? "").trim();
+  return Boolean(text) && !["未标注", "未设置", "暂未配置", "未分类", "-", "--"].includes(text);
+}
+
+function getHorizontalProductFields(product) {
+  const fields = [];
+  const add = (label, value) => {
+    if (hasProductValue(value)) fields.push({ label, value: String(value).trim() });
+  };
+  const price = normalizePriceValue(product.price);
+  const stock = normalizeStock(product.stock);
+
+  add("类目", product.category);
+  if (price != null) add("达播价", `￥${price}`);
+  if (stock != null) add("现货", `${new Intl.NumberFormat("zh-CN").format(stock)} 件`);
+  add("预售 / 产能", normalizePresaleStock(product.presale_stock));
+  add("等级", product.level);
+  add("风格线", product.style);
+  add("季节", product.season);
+  return fields;
+}
+
+function renderHorizontalProduct(product) {
+  const selected = state.selected.has(product.id);
+  const featured = state.featured.has(product.id);
+  const remark = state.remarks.get(product.id) || "";
+  const fields = getHorizontalProductFields(product);
+
+  return `
+    <article class="product-card product-horizontal-card ${selected ? "selected" : ""} ${featured ? "featured" : ""}">
+      <div class="horizontal-image-wrap">
+        <img src="${product.img}" alt="${product.name}" loading="lazy" />
+        <button class="image-preview-button" data-action="preview" data-id="${product.id}" aria-label="放大查看图片" title="查看图片">
+          <i data-lucide="eye"></i>
+        </button>
+      </div>
+      <div class="horizontal-product-title">
+        <h3>${product.name}</h3>
+        <span class="sku">${product.sku}</span>
+        ${selected ? `<span class="horizontal-selection-status ${featured ? "featured" : ""}">${featured ? "重点款" : "已选"}</span>` : ""}
+      </div>
+      ${fields.length ? `<div class="horizontal-product-fields">${fields.map((field) => `<div><span>${field.label}</span><strong>${escapeHtml(field.value)}</strong></div>`).join("")}</div>` : ""}
+      <div class="horizontal-card-actions">
+        <button class="mini-button select" data-action="toggle" data-id="${product.id}" title="${selected ? "取消选款" : "选择商品"}" aria-label="${selected ? "取消选款" : "选择商品"}">
+          <i data-lucide="${selected ? "check" : "plus"}"></i>
+        </button>
+        <button class="mini-button feature ${featured ? "active" : ""}" data-action="feature" data-id="${product.id}" title="设为重点款" aria-label="设为重点款">
+          <i data-lucide="star"></i>
+        </button>
+        <button class="mini-button" data-action="detail" data-id="${product.id}" title="查看详情" aria-label="查看详情">
+          <i data-lucide="panel-right-open"></i>
+        </button>
+      </div>
+      ${
+        selected
+          ? `
+            <label class="horizontal-card-remark">
+              <span>达人备注</span>
+              <textarea rows="2" placeholder="" data-remark="${product.id}">${escapeHtml(remark)}</textarea>
+            </label>
+          `
+          : ""
+      }
+    </article>
+  `;
+}
+
 function syncRemarkFields(id, value, source) {
   document.querySelectorAll(`[data-remark="${id}"]`).forEach((field) => {
     if (field === source) return;
@@ -1273,12 +1344,16 @@ function renderProducts() {
   const visibleList = list.slice(0, state.visibleLimit);
   els.resultCount.textContent = `${list.length} 款`;
   els.productGrid.classList.toggle("compact-density", state.productDensity === "compact");
+  els.productGrid.classList.toggle("horizontal-density", state.productDensity === "horizontal");
   els.standardDensityButton?.classList.toggle("active", state.productDensity === "standard");
   els.compactDensityButton?.classList.toggle("active", state.productDensity === "compact");
+  els.horizontalDensityButton?.classList.toggle("active", state.productDensity === "horizontal");
   els.standardDensityButton?.setAttribute("aria-pressed", String(state.productDensity === "standard"));
   els.compactDensityButton?.setAttribute("aria-pressed", String(state.productDensity === "compact"));
+  els.horizontalDensityButton?.setAttribute("aria-pressed", String(state.productDensity === "horizontal"));
   const cards = visibleList
     .map((product) => {
+      if (state.productDensity === "horizontal") return renderHorizontalProduct(product);
       const selected = state.selected.has(product.id);
       const featured = state.featured.has(product.id);
       const remark = state.remarks.get(product.id) || "";
@@ -1350,7 +1425,7 @@ function renderProducts() {
 }
 
 function setProductDensity(density) {
-  const nextDensity = density === "compact" ? "compact" : "standard";
+  const nextDensity = ["compact", "horizontal"].includes(density) ? density : "standard";
   if (state.productDensity === nextDensity) return;
   state.productDensity = nextDensity;
   localStorage.setItem("inmanProductDensity", nextDensity);
@@ -3942,6 +4017,7 @@ document.addEventListener("click", (event) => {
   if (action === "task-status") updateSelectionTaskStatus(id, actionButton.dataset.status);
   if (action === "density-standard") setProductDensity("standard");
   if (action === "density-compact") setProductDensity("compact");
+  if (action === "density-horizontal") setProductDensity("horizontal");
   if (action === "load-more") {
     state.visibleLimit += 60;
     renderProducts();
