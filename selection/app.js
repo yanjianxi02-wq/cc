@@ -1642,6 +1642,10 @@ function closeBrandProductEditor() {
 }
 
 function openBrandProductEditor(sku) {
+  if (state.currentRole !== "brand") {
+    showToast("仅品牌方可编辑商品");
+    return;
+  }
   if (!productPool.some((product) => product.sku === sku)) return;
   state.brandEditingSku = sku;
   renderBrandProductEditDrawer();
@@ -1888,10 +1892,18 @@ function openDetail(id) {
             ${product.points.map((point) => `<li>${point}</li>`).join("")}
           </ul>
         </div>
-        <button class="primary-button" data-action="toggle" data-id="${product.id}">
-          <i data-lucide="${selected ? "check" : "plus"}"></i>
-          <span>${selected ? "取消选款" : "加入选款"}</span>
-        </button>
+        <div class="detail-actions">
+          <button class="primary-button" data-action="toggle" data-id="${product.id}">
+            <i data-lucide="${selected ? "check" : "plus"}"></i>
+            <span>${selected ? "取消选款" : "加入选款"}</span>
+          </button>
+          ${state.currentRole === "brand" ? `
+            <button class="ghost-button detail-edit-button" data-action="edit-detail-product" data-id="${product.sku}" type="button">
+              <i data-lucide="pencil"></i>
+              <span>编辑商品</span>
+            </button>
+          ` : ""}
+        </div>
       </div>
     </div>
   `;
@@ -3840,6 +3852,11 @@ document.addEventListener("click", (event) => {
   if (action === "preview") openImagePreview(id);
   if (action === "remove") toggleProduct(id);
   if (action === "edit-override") openBrandProductEditor(id);
+  if (action === "edit-detail-product") {
+    if (state.currentRole !== "brand") return;
+    els.modal.classList.add("hidden");
+    openBrandProductEditor(id);
+  }
   if (action === "focus-image-paste") {
     const pasteZone = document.querySelector(`[data-image-paste-zone="${id}"]`);
     pasteZone?.focus();

@@ -2423,6 +2423,22 @@ textarea:focus {
   color: var(--ink);
 }
 
+.detail-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.detail-actions .primary-button {
+  width: 100%;
+}
+
+.detail-edit-button {
+  padding-inline: 14px;
+  white-space: nowrap;
+}
+
 .toast {
   position: fixed;
   left: 50%;
