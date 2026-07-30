@@ -594,9 +594,29 @@
               <div class="editor-head">
                 <div>
                   <h3>选款任务</h3>
-                  <p>先在下方商品池勾选款式，再把任务分配给已审核的达人。</p>
+                  <p>选择商品和达人后发布，也可使用固定模板批量导入任务。</p>
                 </div>
                 <span class="task-manager-count" id="brandTaskCount">0 个进行中</span>
+              </div>
+              <div class="task-toolbar" aria-label="选款任务批量操作">
+                <button class="ghost-button" id="brandTaskTemplateButton" type="button">
+                  <i data-lucide="download"></i><span>下载任务模板</span>
+                </button>
+                <label class="import-file task-import-file">
+                  <input id="brandTaskImportFile" type="file" accept=".xlsx,.xls,.csv" />
+                  <i data-lucide="file-up"></i><span>选择任务表</span>
+                </label>
+                <button class="primary-button" id="brandTaskImportButton" type="button">
+                  <i data-lucide="upload"></i><span>批量导入任务</span>
+                </button>
+                <button class="ghost-button" id="brandTaskExportButton" type="button">
+                  <i data-lucide="file-down"></i><span>导出当前任务</span>
+                </button>
+              </div>
+              <div class="task-create-guide" id="brandTaskCreateGuide" role="status"></div>
+              <div class="task-create-section-head">
+                <h4>手动创建任务</h4>
+                <span>按步骤填写并立即外发</span>
               </div>
               <div class="task-create-grid">
                 <label>
@@ -617,13 +637,13 @@
                 </label>
               </div>
               <div class="task-assignment-head">
-                <strong>分配达人</strong>
+                <strong>选择达人</strong>
                 <small id="brandTaskSelectionHint">先在下方商品池勾选款式</small>
               </div>
               <div class="task-creator-list" id="brandTaskCreatorList"></div>
               <div class="task-create-actions">
-                <button class="primary-button" id="brandCreateTaskButton" type="button">
-                  <i data-lucide="send"></i><span>创建并外发任务</span>
+                <button class="primary-button" id="brandCreateTaskButton" type="button" aria-describedby="brandTaskCreateGuide">
+                  <i data-lucide="send"></i><span id="brandCreateTaskLabel">发布选款任务</span>
                 </button>
               </div>
               <div class="task-list" id="brandTaskList"></div>

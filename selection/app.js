@@ -221,7 +221,12 @@ const els = {
   brandTaskDescription: document.getElementById("brandTaskDescription"),
   brandTaskSelectionHint: document.getElementById("brandTaskSelectionHint"),
   brandTaskCreatorList: document.getElementById("brandTaskCreatorList"),
+  brandTaskCreateGuide: document.getElementById("brandTaskCreateGuide"),
   brandCreateTaskButton: document.getElementById("brandCreateTaskButton"),
+  brandTaskTemplateButton: document.getElementById("brandTaskTemplateButton"),
+  brandTaskImportFile: document.getElementById("brandTaskImportFile"),
+  brandTaskImportButton: document.getElementById("brandTaskImportButton"),
+  brandTaskExportButton: document.getElementById("brandTaskExportButton"),
   brandTaskList: document.getElementById("brandTaskList"),
   brandImportFile: document.getElementById("brandImportFile"),
   brandImportButton: document.getElementById("brandImportButton"),
@@ -413,11 +418,31 @@ function renderBrandTaskManager() {
     els.brandTaskCount.textContent = `${activeTaskCount} 个进行中`;
   }
   if (els.brandTaskSelectionHint) {
-    els.brandTaskSelectionHint.textContent = `已勾选 ${selectedProductCount} 款，已选择 ${selectedCreatorCount} 位达人`;
+    els.brandTaskSelectionHint.textContent = `商品：已勾选 ${selectedProductCount} 款 · 达人：已选择 ${selectedCreatorCount} 位`;
+  }
+  const taskGuide = !selectedProductCount
+    ? "第 1 步：请在下方商品池勾选至少 1 款商品。"
+    : !selectedCreatorCount
+      ? "第 2 步：请选择至少 1 位已审核达人。"
+      : "商品和达人已选择，填写任务名称后即可发布。";
+  if (els.brandTaskCreateGuide) {
+    els.brandTaskCreateGuide.textContent = taskGuide;
+    els.brandTaskCreateGuide.classList.toggle("is-ready", Boolean(selectedProductCount && selectedCreatorCount));
   }
   if (els.brandCreateTaskButton) {
     els.brandCreateTaskButton.disabled =
       !selectedProductCount || !selectedCreatorCount || Boolean(state.adminSavingSku);
+    const taskButtonLabel = els.brandCreateTaskButton.querySelector("span");
+    if (taskButtonLabel) {
+      taskButtonLabel.textContent = !selectedProductCount
+        ? "请先勾选商品"
+        : !selectedCreatorCount
+          ? "请选择达人"
+          : "发布选款任务";
+    }
+  }
+  if (els.brandTaskImportButton) {
+    els.brandTaskImportButton.disabled = Boolean(state.adminSavingSku);
   }
 
   els.brandTaskCreatorList.innerHTML = activeCreators.length
@@ -3558,6 +3583,19 @@ const IMPORT_SCHEMAS = {
       { header: "达人端排序", example: "10", note: "留空不修改；正整数越小越靠前，填“自动”清除前排排序。" },
     ],
   },
+  tasks: {
+    title: "选款任务批量导入模板",
+    fileName: "选款任务批量导入模板",
+    sheetName: "选款任务",
+    fields: [
+      { header: "任务名称", example: "秋季首场选款", note: "必填；相同任务名称、截止时间、说明和建议选款数会合并为一项任务。" },
+      { header: "截止时间", example: "2026-09-03 20:00", note: "可留空；建议使用 YYYY-MM-DD HH:mm。" },
+      { header: "建议选款数", example: "20", note: "可留空；填写时只能是 1-200 的整数。" },
+      { header: "任务说明", example: "优先选择适合直播挂车的款式", note: "可留空；同一任务的说明需保持一致。" },
+      { header: "达人邮箱", example: "creator@example.com，creator2@example.com", note: "必填；必须是已审核并开通的达人账号。可用逗号、分号或换行填写多位达人。" },
+      { header: "款号", example: "F18628781，F18628782", note: "必填；必须是当前达人可见的商品。可用逗号、分号或换行填写多款商品，系统会把这些商品分配给本行所有达人。" },
+    ],
+  },
 };
 
 function normalizeImportHeader(value) {
@@ -3598,7 +3636,7 @@ function downloadImportTemplate(schemaKey) {
   const guideRows = [
     ["导入说明", schema.title],
     ["填写规则", "请从第二行开始填写；表头可调整顺序但不能改名或删除；其他额外列会被忽略。"],
-    ["批量安全", schemaKey === "overrides" ? "空白单元格保持当前数据不变。" : "空白字段不会覆盖已有值；新款缺失字段会保持空白或默认值。"],
+    ["批量安全", schemaKey === "overrides" ? "空白单元格保持当前数据不变。" : schemaKey === "tasks" ? "同名、同截止时间、同说明和同建议选款数的行会合并为一个任务；同名同截止时间的已有任务会跳过。" : "空白字段不会覆盖已有值；新款缺失字段会保持空白或默认值。"],
     [],
     ["固定表头", "填写示例", "字段说明"],
     ...schema.fields.map((field) => [field.header, field.example, field.note]),
@@ -3888,6 +3926,228 @@ async function importProductOverrides() {
   } finally {
     els.brandImportButton.disabled = false;
   }
+}
+
+function parseTaskImportDueAt(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  if (typeof value === "number" && window.XLSX?.SSF?.parse_date_code) {
+    const parsed = window.XLSX.SSF.parse_date_code(value);
+    if (parsed) {
+      const date = new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, parsed.S || 0);
+      return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+    }
+  }
+  const text = String(value).trim().replace(/年|\//g, "-").replace(/月/g, "-").replace(/日/g, "").replace(/\s+/g, "T");
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function splitTaskImportValues(value) {
+  return [...new Set(
+    String(value || "")
+      .split(/[，,;；\n\r]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  )];
+}
+
+function buildSelectionTaskImport(rows) {
+  const creatorsByEmail = new Map(
+    state.brandCreators
+      .filter((creator) => creator.status === "active")
+      .map((creator) => [String(creator.email || "").trim().toLowerCase(), creator])
+  );
+  const visibleProductsBySku = new Map(productPool.filter((product) => !product.hidden).map((product) => [product.sku, product]));
+  const groups = new Map();
+  const issues = [];
+
+  rows.forEach((row, index) => {
+    const rowNumber = index + 2;
+    const title = String(pickImportValue(row, ["任务名称"])).trim();
+    const creatorEmails = splitTaskImportValues(pickImportValue(row, ["达人邮箱"])).map((email) => email.toLowerCase());
+    const skus = splitTaskImportValues(pickImportValue(row, ["款号"]));
+    const description = String(pickImportValue(row, ["任务说明"])).trim();
+    const recommendedRaw = String(pickImportValue(row, ["建议选款数"])).trim();
+    const recommendedCount = recommendedRaw ? Number(recommendedRaw) : null;
+    const dueAt = parseTaskImportDueAt(pickImportValue(row, ["截止时间"]));
+
+    if (!title || !creatorEmails.length || !skus.length) {
+      issues.push(`第 ${rowNumber} 行缺少任务名称、达人邮箱或款号`);
+      return;
+    }
+    if (dueAt === undefined) {
+      issues.push(`第 ${rowNumber} 行截止时间格式不正确`);
+      return;
+    }
+    if (recommendedCount != null && (!Number.isInteger(recommendedCount) || recommendedCount < 1 || recommendedCount > 200)) {
+      issues.push(`第 ${rowNumber} 行建议选款数应为 1-200 的整数`);
+      return;
+    }
+    const unavailableCreators = creatorEmails.filter((email) => !creatorsByEmail.has(email));
+    if (unavailableCreators.length) {
+      issues.push(`第 ${rowNumber} 行达人未审核或不存在：${unavailableCreators.join("、")}`);
+      return;
+    }
+    const unavailableSkus = skus.filter((sku) => !visibleProductsBySku.has(sku));
+    if (unavailableSkus.length) {
+      issues.push(`第 ${rowNumber} 行款号不可外发或不存在：${unavailableSkus.join("、")}`);
+      return;
+    }
+
+    const key = [normalizeImportKey(title), dueAt || "", recommendedCount ?? "", description].join("|");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        title,
+        description,
+        dueAt,
+        recommendedCount,
+        creatorIds: new Set(),
+        skus: new Set(),
+      });
+    }
+    const group = groups.get(key);
+    creatorEmails.forEach((email) => group.creatorIds.add(creatorsByEmail.get(email).user_id));
+    skus.forEach((sku) => group.skus.add(sku));
+  });
+
+  const existingTaskKeys = new Set(
+    state.brandTasks.map((task) => [normalizeImportKey(task.title), task.due_at || ""].join("|"))
+  );
+  const pending = [];
+  let duplicateCount = 0;
+  groups.forEach((group) => {
+    const duplicateKey = [normalizeImportKey(group.title), group.dueAt || ""].join("|");
+    if (existingTaskKeys.has(duplicateKey)) {
+      duplicateCount += 1;
+      return;
+    }
+    pending.push({
+      ...group,
+      creatorIds: [...group.creatorIds],
+      skus: [...group.skus],
+    });
+  });
+  return { pending, issues, duplicateCount };
+}
+
+async function importSelectionTasks() {
+  if (!cloudEnabled || state.currentRole !== "brand") {
+    showToast("请先以品牌方身份登录云端后台");
+    return;
+  }
+  const file = els.brandTaskImportFile?.files?.[0];
+  if (!file) {
+    showToast("请先选择任务表");
+    return;
+  }
+  try {
+    const { rows, headers } = await readImportTable(file);
+    validateFixedImportHeaders(headers, "tasks");
+    const { pending, issues, duplicateCount } = buildSelectionTaskImport(rows);
+    if (pending.length > 50) {
+      showToast("一次最多导入 50 个任务，请拆分表格后重试");
+      return;
+    }
+    if (!pending.length) {
+      showToast(issues.length ? `没有可导入任务：${issues[0]}` : "表格中没有新的有效任务");
+      return;
+    }
+    const relationCount = pending.reduce((total, task) => total + task.creatorIds.length * task.skus.length, 0);
+    if (!window.confirm(`将创建 ${pending.length} 个选款任务，包含约 ${relationCount} 条达人-商品关系。${duplicateCount ? `\n已跳过 ${duplicateCount} 个同名同截止时间的现有任务。` : ""}${issues.length ? `\n另有 ${issues.length} 行无效数据会跳过。` : ""}\n\n确认批量创建并外发吗？`)) return;
+
+    state.adminSavingSku = "task-import";
+    renderBrandTaskManager();
+    let createdCount = 0;
+    let failedCount = 0;
+    for (const task of pending) {
+      const { error } = await cloud.rpc("create_selection_task", {
+        p_title: task.title,
+        p_description: task.description,
+        p_due_at: task.dueAt,
+        p_recommended_count: task.recommendedCount,
+        p_creator_user_ids: task.creatorIds,
+        p_skus: task.skus,
+      });
+      if (error) {
+        console.error(error);
+        failedCount += 1;
+      } else {
+        createdCount += 1;
+      }
+    }
+    els.brandTaskImportFile.value = "";
+    await Promise.all([loadBrandTaskData({ silent: true }), loadAdminData()]);
+    renderBrandProductEditor();
+    showToast(`已创建 ${createdCount} 个任务${duplicateCount ? `，跳过 ${duplicateCount} 个重复任务` : ""}${issues.length ? `，跳过 ${issues.length} 行无效数据` : ""}${failedCount ? `，${failedCount} 个任务创建失败` : ""}`);
+  } catch (error) {
+    console.error(error);
+    showToast(importErrorMessage(error, "任务表读取或创建失败"));
+  } finally {
+    state.adminSavingSku = "";
+    renderBrandTaskManager();
+  }
+}
+
+function exportSelectionTasks() {
+  if (!window.XLSX) {
+    showToast("表格导出组件加载失败，请刷新后重试");
+    return;
+  }
+  if (!state.brandTasks.length) {
+    showToast("暂无可导出的选款任务");
+    return;
+  }
+  const creatorsById = new Map(state.brandCreators.map((creator) => [creator.user_id, creator]));
+  const productsByTask = state.brandTaskProducts.reduce((map, item) => {
+    const items = map.get(item.task_id) || [];
+    items.push(item.sku);
+    map.set(item.task_id, items);
+    return map;
+  }, new Map());
+  const assignmentsByTask = state.brandTaskAssignments.reduce((map, assignment) => {
+    const items = map.get(assignment.task_id) || [];
+    items.push(assignment.creator_user_id);
+    map.set(assignment.task_id, items);
+    return map;
+  }, new Map());
+  const submissionsByTask = state.adminSubmissions.reduce((map, submission) => {
+    if (!submission.task_id) return map;
+    map.set(submission.task_id, (map.get(submission.task_id) || 0) + 1);
+    return map;
+  }, new Map());
+  const rows = [["任务名称", "截止时间", "建议选款数", "任务说明", "达人邮箱", "款号", "达人名称", "商品名称", "任务状态", "已提交次数"]];
+  state.brandTasks.forEach((task) => {
+    const creatorIds = assignmentsByTask.get(task.id) || [];
+    const skus = productsByTask.get(task.id) || [];
+    creatorIds.forEach((creatorId) => {
+      const creator = creatorsById.get(creatorId);
+      skus.forEach((sku) => {
+        const product = productPool.find((item) => item.sku === sku);
+        rows.push([
+          task.title || "",
+          task.due_at ? new Date(task.due_at).toLocaleString("zh-CN", { hour12: false }) : "",
+          task.recommended_count ?? "",
+          task.description || "",
+          creator?.email || "",
+          sku || "",
+          creator?.creator_name || "",
+          product?.name || "",
+          task.status || "",
+          submissionsByTask.get(task.id) || 0,
+        ]);
+      });
+    });
+  });
+  const sheet = window.XLSX.utils.aoa_to_sheet(rows);
+  sheet["!cols"] = [
+    { wch: 24 }, { wch: 20 }, { wch: 14 }, { wch: 40 }, { wch: 28 },
+    { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 12 }, { wch: 12 },
+  ];
+  sheet["!autofilter"] = { ref: `A1:J${Math.max(rows.length, 2)}` };
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, sheet, "当前任务");
+  window.XLSX.writeFile(workbook, `选款任务导出_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  showToast(`已导出 ${state.brandTasks.length} 个选款任务`);
 }
 
 async function resetProductOverride(sku) {
@@ -4368,6 +4628,15 @@ if (els.brandNewProductsTemplateButton) {
 }
 if (els.brandCreateTaskButton) {
   els.brandCreateTaskButton.addEventListener("click", createSelectionTask);
+}
+if (els.brandTaskTemplateButton) {
+  els.brandTaskTemplateButton.addEventListener("click", () => downloadImportTemplate("tasks"));
+}
+if (els.brandTaskImportButton) {
+  els.brandTaskImportButton.addEventListener("click", importSelectionTasks);
+}
+if (els.brandTaskExportButton) {
+  els.brandTaskExportButton.addEventListener("click", exportSelectionTasks);
 }
 if (els.adminSubmissionDateFrom) {
   els.adminSubmissionDateFrom.addEventListener("change", (event) => {
