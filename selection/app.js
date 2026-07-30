@@ -883,7 +883,7 @@ function readFileAsDataUrl(file) {
 // The catalog stores the override image as a data URL. Accept large source files,
 // but optimize them before storing so the catalog stays responsive and reliable.
 const IMAGE_SOURCE_PREFERRED_BYTES = 500 * 1024 * 1024;
-const IMAGE_BROWSER_HARD_LIMIT_BYTES = 800 * 1024 * 1024;
+const IMAGE_BROWSER_HARD_LIMIT_BYTES = 500 * 1024 * 1024;
 const IMAGE_STORAGE_TARGET_BYTES = Math.floor(1.4 * 1024 * 1024);
 const IMAGE_STANDARD_MAX_EDGE = 2600;
 const IMAGE_LARGE_SOURCE_MAX_EDGE = 1800;
@@ -1731,7 +1731,7 @@ function renderBrandProductEditDrawer() {
           <small>点击后按 Ctrl+V，可直接粘贴截图或复制的图片</small>
         </div>
       </div>
-      <p class="brand-image-policy">支持上传或粘贴图片。源图 500MB 以内可直接处理；超过时保存前会自动加强压缩。为保证云端稳定，超过 1.4MB 的图片都会压缩为展示版本。</p>
+      <p class="brand-image-policy">支持上传或粘贴图片。源图最大 500MB；为保证云端稳定，超过 1.4MB 的图片保存前会自动压缩为展示版本。</p>
     </div>
     <footer class="brand-edit-footer">
       <button class="ghost-button" data-action="reset-override" data-id="${product.sku}" type="button" ${saving ? "disabled" : ""}>恢复BI原始值</button>
@@ -3062,6 +3062,69 @@ function isPresaleStockColumnError(error) {
   return /presale_stock/i.test(`${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`);
 }
 
+function isMissingBrandSaveRpcError(error) {
+  return /save_brand_product_configuration|could not find the function/i.test(
+    `${error?.code || ""} ${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`
+  );
+}
+
+function productSaveErrorMessage(error) {
+  const detail = `${error?.code || ""} ${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`;
+  if (/42501|permission denied|brand admin required|forbidden/i.test(detail)) {
+    return "商品配置保存被云端拒绝，请确认使用品牌方账号登录";
+  }
+  if (/image payload is too large|payload too large|413/i.test(detail)) {
+    return "图片处理后仍过大，请换用更小的 JPG、PNG 或 WebP";
+  }
+  if (/invalid price|invalid stock|product configuration is too long|23514/i.test(detail)) {
+    return "请检查价格、库存和预售库存内容";
+  }
+  if (/catalog product not found|catalog-product-missing/i.test(detail)) {
+    return "该款不在当前云端商品池，无法保存";
+  }
+  return "商品配置保存失败，请稍后重试";
+}
+
+async function saveBrandProductConfiguration(draft, userEmail) {
+  const payload = {
+    p_sku: draft.sku,
+    p_price: draft.price,
+    p_image_url: draft.image_url,
+    p_plan_level: draft.plan_level,
+    p_style: draft.style,
+    p_stock: draft.stock,
+    p_presale_stock: draft.presale_stock,
+    p_creator_sort_priority: draft.creator_sort_priority,
+    p_is_hidden: draft.is_hidden,
+  };
+  const result = await cloud.rpc("save_brand_product_configuration", payload);
+  if (!result.error || !isMissingBrandSaveRpcError(result.error)) {
+    return { error: result.error, priorityUnavailable: false, legacy: false };
+  }
+
+  // Temporary fallback for a deployment where the page is newer than the
+  // database migration. It keeps normal non-image edits usable until the
+  // brand runs the migration, without bypassing existing RLS policies.
+  const inventoryResult = await updateCatalogInventory(draft.sku, draft, userEmail);
+  if (inventoryResult.error) {
+    return { error: inventoryResult.error, priorityUnavailable: false, legacy: true };
+  }
+  const {
+    image_compressed,
+    image_output_size,
+    stock,
+    presale_stock,
+    ...overrideDraft
+  } = draft;
+  const legacyPayload = [{
+    ...overrideDraft,
+    updated_by: userEmail || "",
+    updated_at: new Date().toISOString(),
+  }];
+  const legacyResult = await upsertProductOverrides(legacyPayload);
+  return { error: legacyResult.error, priorityUnavailable: legacyResult.priorityUnavailable, legacy: true };
+}
+
 async function updateCatalogInventory(sku, draft, userEmail) {
   const { data, error } = await cloud
     .from("product_catalog")
@@ -3136,25 +3199,12 @@ async function saveProductOverride(sku) {
   const {
     data: { user },
   } = await cloud.auth.getUser();
-  const inventoryResult = await updateCatalogInventory(sku, draft, user?.email || "");
-  if (inventoryResult.error) {
-    state.adminSavingSku = "";
-    console.error(inventoryResult.error);
-    showToast(inventoryResult.presaleUnavailable ? "请先升级云端库存字段" : "库存保存失败");
-    renderBrandProductEditor();
-    return;
-  }
-  const { image_compressed: imageCompressed, image_output_size: imageOutputSize, ...overrideDraft } = draft;
-  const payload = {
-    ...overrideDraft,
-    updated_by: user?.email || "",
-    updated_at: new Date().toISOString(),
-  };
-  const { error, priorityUnavailable } = await upsertProductOverrides(payload);
+  const { image_compressed: imageCompressed, image_output_size: imageOutputSize } = draft;
+  const { error, priorityUnavailable } = await saveBrandProductConfiguration(draft, user?.email || "");
   state.adminSavingSku = "";
   if (error) {
     console.error(error);
-    showToast("保存失败");
+    showToast(productSaveErrorMessage(error));
     renderBrandProductEditor();
     return;
   }
