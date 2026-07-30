@@ -1538,6 +1538,63 @@ textarea:focus {
   margin-bottom: 14px;
 }
 
+.task-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid #dbe8e1;
+  border-radius: 8px;
+  background: #f8fbf9;
+}
+
+.task-toolbar .ghost-button,
+.task-toolbar .primary-button,
+.task-import-file {
+  min-height: 38px;
+  padding: 8px 11px;
+}
+
+.task-create-guide {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  margin: 0 0 12px;
+  padding: 8px 11px;
+  color: #785200;
+  border: 1px solid #f2ddb4;
+  border-radius: 8px;
+  background: #fff9eb;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.task-create-guide.is-ready {
+  color: #08744f;
+  border-color: #bfe2cf;
+  background: #eff9f3;
+}
+
+.task-create-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+.task-create-section-head h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.task-create-section-head span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .task-manager-count {
   color: var(--green-dark);
   background: var(--soft-green);
@@ -1609,6 +1666,8 @@ textarea:focus {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .task-list {
@@ -3554,6 +3613,16 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .task-toolbar {
+    align-items: stretch;
+  }
+
+  .task-toolbar .ghost-button,
+  .task-toolbar .primary-button,
+  .task-import-file {
+    flex: 1 1 46%;
+  }
+
   .task-description-field {
     grid-column: auto;
   }
@@ -3574,6 +3643,12 @@ textarea:focus {
 
   .task-create-actions .primary-button {
     width: 100%;
+  }
+
+  .task-create-section-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
   }
 
   .admin-submission-head {
