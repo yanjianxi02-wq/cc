@@ -4013,14 +4013,16 @@ function buildSelectionTaskImport(rows) {
   const existingTaskKeys = new Set(
     state.brandTasks.map((task) => [normalizeImportKey(task.title), task.due_at || ""].join("|"))
   );
+  const pendingTaskKeys = new Set();
   const pending = [];
   let duplicateCount = 0;
   groups.forEach((group) => {
     const duplicateKey = [normalizeImportKey(group.title), group.dueAt || ""].join("|");
-    if (existingTaskKeys.has(duplicateKey)) {
+    if (existingTaskKeys.has(duplicateKey) || pendingTaskKeys.has(duplicateKey)) {
       duplicateCount += 1;
       return;
     }
+    pendingTaskKeys.add(duplicateKey);
     pending.push({
       ...group,
       creatorIds: [...group.creatorIds],
