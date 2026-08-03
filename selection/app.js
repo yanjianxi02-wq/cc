@@ -213,6 +213,7 @@ const els = {
   brandNewProductsFile: document.getElementById("brandNewProductsFile"),
   brandNewProductsButton: document.getElementById("brandNewProductsButton"),
   brandNewProductsTemplateButton: document.getElementById("brandNewProductsTemplateButton"),
+  brandNewProductsStatus: document.getElementById("brandNewProductsStatus"),
   brandCatalogMeta: document.getElementById("brandCatalogMeta"),
   brandTaskCount: document.getElementById("brandTaskCount"),
   brandTaskTitle: document.getElementById("brandTaskTitle"),
@@ -3692,6 +3693,43 @@ function importErrorMessage(error, fallbackMessage) {
   return fallbackMessage;
 }
 
+function formatImportFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function setCatalogImportStatus(message, status = "idle") {
+  if (!els.brandNewProductsStatus) return;
+  els.brandNewProductsStatus.textContent = message;
+  els.brandNewProductsStatus.dataset.state = status;
+}
+
+function catalogImportErrorMessage(error) {
+  const basicMessage = importErrorMessage(error, "");
+  if (basicMessage) return basicMessage;
+  const detail = `${error?.message || ""} ${error?.code || ""} ${error?.details || ""}`.toLowerCase();
+  if (/row-level security|permission denied|not authorized|forbidden|42501/.test(detail)) {
+    return "云端拒绝写入：当前登录账号没有品牌方商品池权限。请退出后以品牌方账号重新登录。";
+  }
+  if (/not-authenticated|jwt expired|auth session missing|invalid jwt/.test(detail)) {
+    return "登录状态已失效：请重新登录品牌方后台后再导入。";
+  }
+  if (/file-read-failed/.test(detail)) {
+    return "所选文件读取失败：请关闭正在占用该文件的程序后重新选择。";
+  }
+  if (/schema cache|column .* does not exist|relation .* does not exist|42703|42p01|pgrst204/.test(detail)) {
+    return "云端商品池字段未同步：请先执行最新数据库迁移，再重新导入。";
+  }
+  if (/duplicate key|23505/.test(detail)) {
+    return "导入表中存在重复款号，云端无法完成更新。请检查款号后重新导入。";
+  }
+  if (/failed to fetch|network|timeout|networkerror/.test(detail)) {
+    return "云端连接失败：请检查网络后重新点击“更新新品”。";
+  }
+  return "新品同步失败。已保留所选文件，请根据浏览器控制台错误或截图继续核查。";
+}
+
 function buildImportPayload(rows, userEmail) {
   const payload = [];
   const missingSkus = [];
@@ -3845,44 +3883,64 @@ function buildCatalogImportPayload(rows, userEmail) {
 
 async function importNewProducts() {
   if (!cloudEnabled) {
-    showToast("云端后台尚未完成配置");
+    const message = "云端后台尚未完成配置，暂时不能更新新品。";
+    setCatalogImportStatus(message, "error");
+    showToast(message);
+    return;
+  }
+  if (state.currentRole !== "brand") {
+    const message = "当前账号不是品牌方，不能更新云端商品池。";
+    setCatalogImportStatus(message, "error");
+    showToast(message);
     return;
   }
   const file = els.brandNewProductsFile?.files?.[0];
   if (!file) {
-    showToast("请先选择新品表");
+    const message = "请先选择新品表，再点击“更新新品”。";
+    setCatalogImportStatus(message, "error");
+    showToast(message);
     return;
   }
   els.brandNewProductsButton.disabled = true;
-  showToast("正在更新新品池...");
+  els.brandNewProductsButton.setAttribute("aria-busy", "true");
+  setCatalogImportStatus(`正在读取“${file.name}”（${formatImportFileSize(file.size)}）…`, "working");
   try {
     const { rows, headers } = await readImportTable(file);
+    setCatalogImportStatus(`已读取 ${rows.length} 行，正在校验固定表头…`, "working");
     validateFixedImportHeaders(headers, "catalog");
-    const {
-      data: { user },
-    } = await cloud.auth.getUser();
-    const { payload, skipped } = buildCatalogImportPayload(rows, user?.email || "");
+    const { data: authData, error: authError } = await cloud.auth.getUser();
+    if (authError || !authData?.user) {
+      throw authError || new Error("not-authenticated");
+    }
+    setCatalogImportStatus("表头校验通过，正在整理有效商品行…", "working");
+    const { payload, skipped } = buildCatalogImportPayload(rows, authData.user.email || "");
     if (!payload.length) {
-      showToast("表格里没有可更新的款号");
+      const message = "表格中没有可更新的款号。请确认“款号”列从第二行开始填写。";
+      setCatalogImportStatus(message, "error");
+      showToast(message);
       return;
     }
+    setCatalogImportStatus(`表头已通过，准备同步 ${payload.length} 款新品到云端…`, "working");
     const { error, priorityUnavailable } = await upsertProductCatalog(payload);
     if (error) {
-      console.error(error);
-      showToast("新品更新失败，请先确认云端商品池表已创建");
-      return;
+      throw error;
     }
     els.brandNewProductsFile.value = "";
-    showToast(`已更新新品 ${payload.length} 款${skipped.length ? `，${skipped.length} 行缺少款号` : ""}${priorityUnavailable ? "，达人排序列待升级云端后生效" : ""}`);
+    const message = `云端同步完成：已新增或更新 ${payload.length} 款${skipped.length ? `，跳过 ${skipped.length} 行缺少款号的数据` : ""}${priorityUnavailable ? "。达人端排序列待云端升级后生效" : ""}`;
+    setCatalogImportStatus(message, "success");
+    showToast(`已更新新品 ${payload.length} 款`);
     await loadProductCatalog({ silent: true });
     await loadProductOverrides({ silent: true });
     renderAdmin();
     renderBrandProductEditor();
   } catch (error) {
     console.error(error);
-    showToast(importErrorMessage(error, "新品表读取失败"));
+    const message = catalogImportErrorMessage(error);
+    setCatalogImportStatus(message, "error");
+    showToast(message);
   } finally {
     els.brandNewProductsButton.disabled = false;
+    els.brandNewProductsButton.removeAttribute("aria-busy");
   }
 }
 
@@ -4624,6 +4682,17 @@ if (els.brandImportTemplateButton) {
 }
 if (els.brandNewProductsButton) {
   els.brandNewProductsButton.addEventListener("click", importNewProducts);
+}
+if (els.brandNewProductsFile) {
+  els.brandNewProductsFile.addEventListener("change", () => {
+    const file = els.brandNewProductsFile.files?.[0];
+    setCatalogImportStatus(
+      file
+        ? `已选择“${file.name}”（${formatImportFileSize(file.size)}），点击“更新新品”开始校验。`
+        : "请选择新品表，系统会先校验固定表头，再同步到云端商品池。",
+      file ? "ready" : "idle"
+    );
+  });
 }
 if (els.brandNewProductsTemplateButton) {
   els.brandNewProductsTemplateButton.addEventListener("click", () => downloadImportTemplate("catalog"));
