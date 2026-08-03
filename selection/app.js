@@ -43,6 +43,7 @@ const state = {
     visibility: "全部",
     query: "",
   },
+  brandProductLimit: 40,
   brandSelectedSkus: new Set(),
   brandFrontPreviewVisible: false,
   brandFrontDraggingSku: "",
@@ -1849,7 +1850,7 @@ function renderBrandProductEditDrawer() {
 function renderBrandProductEditor() {
   if (!els.brandProductEditor) return;
   const query = state.brandFilters.query.trim().toLowerCase();
-  const list = productPool
+  const filteredProducts = productPool
     .filter((product) => {
       const categoryMatch =
         state.brandFilters.category === "全部" || product.category === state.brandFilters.category;
@@ -1875,12 +1876,13 @@ function renderBrandProductEditor() {
         stockMatch &&
         queryMatch
       );
-    })
-    .slice(0, 40);
+    });
+  const list = filteredProducts.slice(0, state.brandProductLimit);
+  const hasMore = filteredProducts.length > list.length;
 
   const visibleSkus = list.map((product) => product.sku);
   els.brandProductEditor.innerHTML = list.length
-    ? list
+    ? `${list
         .map((product) => {
           const override = state.productOverrides.get(product.sku) || {};
           const checked = state.brandSelectedSkus.has(product.sku);
@@ -1925,7 +1927,18 @@ function renderBrandProductEditor() {
             </article>
           `;
         })
-        .join("")
+        .join("")}
+        <div class="brand-product-list-footer">
+          <span>当前筛选 ${filteredProducts.length} 款，已显示 ${list.length} 款</span>
+          ${
+            hasMore
+              ? `<div>
+                  <button class="ghost-button" data-action="brand-load-more" type="button">显示更多</button>
+                  <button class="ghost-button" data-action="brand-show-all" type="button">显示全部</button>
+                </div>`
+              : ""
+          }
+        </div>`
     : `<div class="empty">没有匹配到商品</div>`;
   renderBrandBatchState(visibleSkus);
   renderBrandFrontQueue();
@@ -3263,6 +3276,28 @@ async function upsertProductCatalog(payload) {
   return { error: fallback.error, priorityUnavailable: !fallback.error };
 }
 
+async function verifyImportedCatalogRows(skus) {
+  const uniqueSkus = [...new Set((skus || []).map((sku) => String(sku || "").trim()).filter(Boolean))];
+  const found = new Map();
+
+  for (let index = 0; index < uniqueSkus.length; index += 200) {
+    const chunk = uniqueSkus.slice(index, index + 200);
+    const { data, error } = await cloud
+      .from("product_catalog")
+      .select("sku,is_active")
+      .in("sku", chunk);
+    if (error) return { error, total: uniqueSkus.length, found: 0, active: 0 };
+    (data || []).forEach((row) => found.set(String(row.sku || "").trim(), row));
+  }
+
+  return {
+    error: null,
+    total: uniqueSkus.length,
+    found: found.size,
+    active: [...found.values()].filter((row) => row.is_active !== false).length,
+  };
+}
+
 async function saveProductOverride(sku) {
   if (!cloudEnabled) {
     showToast("云端后台尚未完成配置");
@@ -3925,12 +3960,25 @@ async function importNewProducts() {
     if (error) {
       throw error;
     }
-    els.brandNewProductsFile.value = "";
-    const message = `云端同步完成：已新增或更新 ${payload.length} 款${skipped.length ? `，跳过 ${skipped.length} 行缺少款号的数据` : ""}${priorityUnavailable ? "。达人端排序列待云端升级后生效" : ""}`;
-    setCatalogImportStatus(message, "success");
-    showToast(`已更新新品 ${payload.length} 款`);
+    setCatalogImportStatus(`云端写入完成，正在按款号回读核验 ${payload.length} 款…`, "working");
     await loadProductCatalog({ silent: true });
     await loadProductOverrides({ silent: true });
+    const verification = await verifyImportedCatalogRows(payload.map((item) => item.sku));
+    els.brandNewProductsFile.value = "";
+    const sharedSuffix = `${skipped.length ? `，跳过 ${skipped.length} 行缺少款号的数据` : ""}${priorityUnavailable ? "。达人端排序列待云端升级后生效" : ""}`;
+    if (verification.error) {
+      const message = `云端已完成写入 ${payload.length} 款，但回读核验失败。请刷新商品池后用款号查询${sharedSuffix}`;
+      setCatalogImportStatus(message, "warning");
+      showToast("新品已写入，回读核验失败");
+    } else if (verification.active === verification.total) {
+      const message = `云端同步完成：已新增或更新 ${payload.length} 款，已回读核验 ${verification.active}/${verification.total} 款可在商品池查询${sharedSuffix}`;
+      setCatalogImportStatus(message, "success");
+      showToast(`已更新并核验 ${verification.active} 款新品`);
+    } else {
+      const message = `云端写入完成，但商品池只回读到 ${verification.active}/${verification.total} 款可见商品。请保留本次表格并截图联系管理员核查权限或字段${sharedSuffix}`;
+      setCatalogImportStatus(message, "warning");
+      showToast("新品同步待核查");
+    }
     renderAdmin();
     renderBrandProductEditor();
   } catch (error) {
@@ -4342,6 +4390,14 @@ document.addEventListener("click", (event) => {
     state.visibleLimit += 60;
     renderProducts();
   }
+  if (action === "brand-load-more") {
+    state.brandProductLimit += 80;
+    renderBrandProductEditor();
+  }
+  if (action === "brand-show-all") {
+    state.brandProductLimit = Number.MAX_SAFE_INTEGER;
+    renderBrandProductEditor();
+  }
 });
 
 document.addEventListener("dragstart", (event) => {
@@ -4606,36 +4662,42 @@ els.adminExportButton.addEventListener("click", exportAdminCsv);
 if (els.brandCategoryFilter) {
   els.brandCategoryFilter.addEventListener("change", (event) => {
     state.brandFilters.category = event.target.value;
+    state.brandProductLimit = 40;
     renderBrandProductEditor();
   });
 }
 if (els.brandLevelFilter) {
   els.brandLevelFilter.addEventListener("change", (event) => {
     state.brandFilters.level = event.target.value;
+    state.brandProductLimit = 40;
     renderBrandProductEditor();
   });
 }
 if (els.brandPriceFilter) {
   els.brandPriceFilter.addEventListener("change", (event) => {
     state.brandFilters.price = event.target.value;
+    state.brandProductLimit = 40;
     renderBrandProductEditor();
   });
 }
 if (els.brandSeasonFilter) {
   els.brandSeasonFilter.addEventListener("change", (event) => {
     state.brandFilters.season = event.target.value;
+    state.brandProductLimit = 40;
     renderBrandProductEditor();
   });
 }
 if (els.brandStockFilter) {
   els.brandStockFilter.addEventListener("change", (event) => {
     state.brandFilters.stock = event.target.value;
+    state.brandProductLimit = 40;
     renderBrandProductEditor();
   });
 }
 if (els.brandVisibilityFilter) {
   els.brandVisibilityFilter.addEventListener("change", (event) => {
     state.brandFilters.visibility = event.target.value;
+    state.brandProductLimit = 40;
     renderBrandProductEditor();
   });
 }
@@ -4643,6 +4705,7 @@ if (els.brandProductSearch) {
   els.brandProductSearch.addEventListener("input", (event) => {
     state.brandProductSearch = event.target.value;
     state.brandFilters.query = event.target.value;
+    state.brandProductLimit = 40;
     renderBrandProductEditor();
   });
 }
