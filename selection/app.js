@@ -233,6 +233,7 @@ const els = {
   brandImportFile: document.getElementById("brandImportFile"),
   brandImportButton: document.getElementById("brandImportButton"),
   brandImportTemplateButton: document.getElementById("brandImportTemplateButton"),
+  brandExportAllButton: document.getElementById("brandExportAllButton"),
   brandProductSearch: document.getElementById("brandProductSearch"),
   brandProductEditor: document.getElementById("brandProductEditor"),
   brandEditDrawer: document.getElementById("brandEditDrawer"),
@@ -3746,6 +3747,69 @@ function downloadImportTemplate(schemaKey) {
   showToast(`已下载${schema.title}`);
 }
 
+function exportAllProductOverrides() {
+  const schema = getImportSchema("overrides");
+  if (!schema || !window.XLSX) {
+    showToast("表格导出组件加载失败，请刷新后重试");
+    return;
+  }
+  if (state.currentRole !== "brand") {
+    showToast("仅品牌方可以导出商品回填表");
+    return;
+  }
+
+  const products = Array.isArray(productPool) ? productPool : [];
+  if (!products.length) {
+    showToast("当前商品池为空，暂时无法导出");
+    return;
+  }
+
+  const headers = schema.fields.map((field) => field.header);
+  const rows = products.map((product) => {
+    const override = state.productOverrides.get(product.sku) || {};
+    const price = normalizePriceValue(product.price);
+    const priority = productSortPriority(product, override);
+    return [
+      product.sku || "",
+      price == null ? "" : price,
+      product.level || "",
+      visibilityText(product),
+      product.style || "",
+      priority == null ? "自动" : priority,
+    ];
+  });
+
+  const dataSheet = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  dataSheet["!cols"] = [
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 24 },
+    { wch: 16 },
+  ];
+  dataSheet["!autofilter"] = {
+    ref: `A1:${window.XLSX.utils.encode_col(headers.length - 1)}${rows.length + 1}`,
+  };
+
+  const guideSheet = window.XLSX.utils.aoa_to_sheet([
+    ["商品池全量回填说明", "请只编辑第一个工作表“商品回填”。"],
+    ["已导出商品数", `${products.length} 款`],
+    ["导入规则", "按款号匹配已有商品；填写的单元格覆盖当前值，空白单元格保持当前值不变。"],
+    ["安全边界", "文件中未出现的商品不会删除；重复款号只读取第一行；无法匹配的款号会在导入结果中提示。"],
+    ["适用字段", "达播价、产品等级、达人可见、风格线、达人端排序。图片、现货库存、预售库存/产能请继续使用单款编辑。"],
+    ["排序填写", "填正整数时数字越小越靠前；填“自动”可取消该款前排排序。"],
+  ]);
+  guideSheet["!cols"] = [{ wch: 20 }, { wch: 100 }];
+
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, dataSheet, "商品回填");
+  window.XLSX.utils.book_append_sheet(workbook, guideSheet, "填写说明");
+  const fileDate = new Date().toISOString().slice(0, 10);
+  window.XLSX.writeFile(workbook, `商品池全量回填-${fileDate}.xlsx`);
+  showToast(`已导出 ${products.length} 款商品，可修改后直接回填导入`);
+}
+
 function readImportTable(file) {
   return new Promise((resolve, reject) => {
     if (!window.XLSX) {
@@ -4822,6 +4886,9 @@ if (els.brandFrontClearButton) {
 }
 if (els.brandImportButton) {
   els.brandImportButton.addEventListener("click", importProductOverrides);
+}
+if (els.brandExportAllButton) {
+  els.brandExportAllButton.addEventListener("click", exportAllProductOverrides);
 }
 if (els.brandImportTemplateButton) {
   els.brandImportTemplateButton.addEventListener("click", () => downloadImportTemplate("overrides"));
