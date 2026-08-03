@@ -1789,6 +1789,12 @@ textarea:focus {
   background: #e9f8f0;
 }
 
+.catalog-import-status[data-state="warning"] {
+  color: #79580f;
+  border-color: #f1d791;
+  background: #fffaea;
+}
+
 .catalog-import-status[data-state="error"] {
   color: #a3322d;
   border-color: #efbeb9;
@@ -2156,6 +2162,23 @@ textarea:focus {
 
 #brandProductEditor {
   overflow-x: auto;
+}
+
+.brand-product-list-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 940px;
+  padding: 14px 4px 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.brand-product-list-footer > div {
+  display: flex;
+  gap: 8px;
 }
 
 .editor-stat {
