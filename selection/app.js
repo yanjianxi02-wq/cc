@@ -3276,25 +3276,60 @@ async function upsertProductCatalog(payload) {
   return { error: fallback.error, priorityUnavailable: !fallback.error };
 }
 
-async function verifyImportedCatalogRows(skus) {
-  const uniqueSkus = [...new Set((skus || []).map((sku) => String(sku || "").trim()).filter(Boolean))];
+async function verifyImportedCatalogRows(targets) {
+  const uniqueTargets = new Map();
+  (targets || []).forEach((target) => {
+    const item = typeof target === "string" ? { sku: target } : target || {};
+    const sku = String(item.sku || "").trim();
+    if (sku) uniqueTargets.set(sku, { ...item, sku });
+  });
+  const targetList = [...uniqueTargets.values()];
+  const uniqueSkus = targetList.map((item) => item.sku);
   const found = new Map();
 
   for (let index = 0; index < uniqueSkus.length; index += 200) {
     const chunk = uniqueSkus.slice(index, index + 200);
     const { data, error } = await cloud
       .from("product_catalog")
-      .select("sku,is_active")
+      .select("sku,is_active,price,stock,presale_stock")
       .in("sku", chunk);
-    if (error) return { error, total: uniqueSkus.length, found: 0, active: 0 };
+    if (error) return { error, total: uniqueSkus.length, found: 0, active: 0, fieldMismatches: [] };
     (data || []).forEach((row) => found.set(String(row.sku || "").trim(), row));
   }
+
+  const fieldTotals = { price: 0, stock: 0, presale_stock: 0 };
+  const fieldMatched = { price: 0, stock: 0, presale_stock: 0 };
+  const fieldMismatches = [];
+  targetList.forEach((target) => {
+    const row = found.get(target.sku);
+    if (!row) return;
+    const mismatchedFields = [];
+    if (target.verify_price) {
+      fieldTotals.price += 1;
+      if (normalizePriceValue(row.price) === normalizePriceValue(target.price)) fieldMatched.price += 1;
+      else mismatchedFields.push("达播价");
+    }
+    if (target.verify_stock) {
+      fieldTotals.stock += 1;
+      if (normalizeStock(row.stock) === normalizeStock(target.stock)) fieldMatched.stock += 1;
+      else mismatchedFields.push("现货库存");
+    }
+    if (target.verify_presale_stock) {
+      fieldTotals.presale_stock += 1;
+      if (normalizePresaleStock(row.presale_stock) === normalizePresaleStock(target.presale_stock)) fieldMatched.presale_stock += 1;
+      else mismatchedFields.push("预售库存/产能");
+    }
+    if (mismatchedFields.length) fieldMismatches.push({ sku: target.sku, fields: mismatchedFields });
+  });
 
   return {
     error: null,
     total: uniqueSkus.length,
     found: found.size,
     active: [...found.values()].filter((row) => row.is_active !== false).length,
+    fieldTotals,
+    fieldMatched,
+    fieldMismatches,
   };
 }
 
@@ -3646,10 +3681,35 @@ function validateFixedImportHeaders(headers, schemaKey) {
   const schema = getImportSchema(schemaKey);
   if (!schema) throw new Error("import-schema-missing");
   const existingHeaders = new Set((headers || []).map(normalizeImportHeader).filter(Boolean));
+  if (schemaKey === "catalog") {
+    const aliasFields = {
+      款号: ["款号", "货号", "sku", "商品款号", "商品编码", "编码", "款式编码"],
+      商品名称: ["商品名称", "商品名", "品名", "名称", "name", "productname"],
+      品类: ["品类", "类目", "所属类目", "商品品类", "category"],
+      季节: ["季节", "季", "season"],
+      上新日期: ["上新日期", "日期", "波段日期", "上市日期", "date", "onsaledate"],
+      达播价: ["达播价", "最低到手价", "价格", "售价", "price"],
+      现货库存: ["现货库存", "合计库存", "库存", "可用库存", "stock", "inventory"],
+      "预售库存/产能": ["预售库存", "预售库存/产能", "预售产能", "预售", "产能", "presale_stock", "presale"],
+      产品等级: ["产品等级", "等级", "品牌计划等级", "planlevel", "level"],
+      风格线: ["风格线", "风格", "style"],
+      图片地址: ["图片地址", "图片链接", "主图", "图片", "image", "imageurl", "img"],
+      达人端排序: ["达人端排序", "达人排序", "排序优先级", "优先级", "creator_sort_priority"],
+    };
+    const recognized = Object.entries(aliasFields)
+      .filter(([, aliases]) => aliases.some((alias) => existingHeaders.has(normalizeImportHeader(alias))))
+      .map(([field]) => field);
+    if (!recognized.includes("款号")) {
+      const error = new Error("import-header-mismatch");
+      error.missingHeaders = ["款号"];
+      throw error;
+    }
+    return { mode: recognized.length === schema.fields.length ? "template" : "compatible", recognized };
+  }
   const missingHeaders = schema.fields
     .map((field) => field.header)
     .filter((header) => !existingHeaders.has(normalizeImportHeader(header)));
-  if (!missingHeaders.length) return;
+  if (!missingHeaders.length) return { mode: "template", recognized: schema.fields.map((field) => field.header) };
   const error = new Error("import-header-mismatch");
   error.missingHeaders = missingHeaders;
   throw error;
@@ -3820,6 +3880,7 @@ function buildImportPayload(rows, userEmail) {
 
 function buildCatalogImportPayload(rows, userEmail) {
   const payload = [];
+  const verificationTargets = [];
   const skipped = [];
   const seen = new Set();
   rows.forEach((row, index) => {
@@ -3847,7 +3908,7 @@ function buildCatalogImportPayload(rows, userEmail) {
     const style = String(
       pickImportValue(row, ["风格线", "风格", "style"]) || existing?.style || ""
     ).trim();
-    const priceRaw = pickImportValue(row, ["达播价", "价格", "售价", "price"]);
+    const priceRaw = pickImportValue(row, ["达播价", "最低到手价", "价格", "售价", "price"]);
     const importedPrice = normalizePriceValue(priceRaw);
     const level =
       parseImportLevel(
@@ -3868,8 +3929,9 @@ function buildCatalogImportPayload(rows, userEmail) {
     const season = normalizeSeason(
       pickImportValue(row, ["季节", "季", "season"]) || existing?.season
     );
-    const stockRaw = pickImportValue(row, ["库存", "可用库存", "现货库存", "stock", "inventory"]);
-    const stock = normalizeStock(stockRaw === "" ? existing?.stock : stockRaw);
+    const stockRaw = pickImportValue(row, ["现货库存", "合计库存", "库存", "可用库存", "stock", "inventory"]);
+    const importedStock = normalizeStock(stockRaw);
+    const stock = stockRaw === "" ? normalizeStock(existing?.stock) : importedStock;
     const presaleRaw = pickImportValue(row, [
       "预售库存",
       "预售库存/产能",
@@ -3887,6 +3949,15 @@ function buildCatalogImportPayload(rows, userEmail) {
       priorityRaw === ""
         ? normalizeCreatorSortPriority(existing?.creator_sort_priority)
         : parseImportSortPriority(priorityRaw);
+    verificationTargets.push({
+      sku,
+      price: importedPrice,
+      stock: importedStock,
+      presale_stock: presaleRaw === "" ? null : presaleStock,
+      verify_price: importedPrice != null,
+      verify_stock: stockRaw !== "" && importedStock != null,
+      verify_presale_stock: presaleRaw !== "" && presaleStock != null,
+    });
     payload.push({
       sku,
       id: sku,
@@ -3913,7 +3984,7 @@ function buildCatalogImportPayload(rows, userEmail) {
       updated_at: new Date().toISOString(),
     });
   });
-  return { payload, skipped };
+  return { payload, skipped, verificationTargets };
 }
 
 async function importNewProducts() {
@@ -3942,20 +4013,23 @@ async function importNewProducts() {
   try {
     const { rows, headers } = await readImportTable(file);
     setCatalogImportStatus(`已读取 ${rows.length} 行，正在校验固定表头…`, "working");
-    validateFixedImportHeaders(headers, "catalog");
+    const headerCheck = validateFixedImportHeaders(headers, "catalog");
     const { data: authData, error: authError } = await cloud.auth.getUser();
     if (authError || !authData?.user) {
       throw authError || new Error("not-authenticated");
     }
     setCatalogImportStatus("表头校验通过，正在整理有效商品行…", "working");
-    const { payload, skipped } = buildCatalogImportPayload(rows, authData.user.email || "");
+    const { payload, skipped, verificationTargets } = buildCatalogImportPayload(rows, authData.user.email || "");
     if (!payload.length) {
       const message = "表格中没有可更新的款号。请确认“款号”列从第二行开始填写。";
       setCatalogImportStatus(message, "error");
       showToast(message);
       return;
     }
-    setCatalogImportStatus(`表头已通过，准备同步 ${payload.length} 款新品到云端…`, "working");
+    const compatibleHint = headerCheck.mode === "compatible"
+      ? `已识别兼容货盘表头：${headerCheck.recognized.join("、")}。`
+      : "固定表头校验通过。";
+    setCatalogImportStatus(`${compatibleHint} 准备同步 ${payload.length} 款新品到云端…`, "working");
     const { error, priorityUnavailable } = await upsertProductCatalog(payload);
     if (error) {
       throw error;
@@ -3963,19 +4037,28 @@ async function importNewProducts() {
     setCatalogImportStatus(`云端写入完成，正在按款号回读核验 ${payload.length} 款…`, "working");
     await loadProductCatalog({ silent: true });
     await loadProductOverrides({ silent: true });
-    const verification = await verifyImportedCatalogRows(payload.map((item) => item.sku));
+    const verification = await verifyImportedCatalogRows(verificationTargets);
     els.brandNewProductsFile.value = "";
     const sharedSuffix = `${skipped.length ? `，跳过 ${skipped.length} 行缺少款号的数据` : ""}${priorityUnavailable ? "。达人端排序列待云端升级后生效" : ""}`;
+    const fieldCheckText = [
+      verification.fieldTotals.price ? `达播价 ${verification.fieldMatched.price}/${verification.fieldTotals.price}` : "",
+      verification.fieldTotals.stock ? `现货库存 ${verification.fieldMatched.stock}/${verification.fieldTotals.stock}` : "",
+      verification.fieldTotals.presale_stock ? `预售库存/产能 ${verification.fieldMatched.presale_stock}/${verification.fieldTotals.presale_stock}` : "",
+    ].filter(Boolean).join("，");
     if (verification.error) {
       const message = `云端已完成写入 ${payload.length} 款，但回读核验失败。请刷新商品池后用款号查询${sharedSuffix}`;
       setCatalogImportStatus(message, "warning");
       showToast("新品已写入，回读核验失败");
-    } else if (verification.active === verification.total) {
-      const message = `云端同步完成：已新增或更新 ${payload.length} 款，已回读核验 ${verification.active}/${verification.total} 款可在商品池查询${sharedSuffix}`;
+    } else if (verification.active === verification.total && !verification.fieldMismatches.length) {
+      const message = `云端同步完成：已新增或更新 ${payload.length} 款，已回读核验 ${verification.active}/${verification.total} 款可在商品池查询${fieldCheckText ? `；${fieldCheckText}` : ""}${sharedSuffix}`;
       setCatalogImportStatus(message, "success");
       showToast(`已更新并核验 ${verification.active} 款新品`);
     } else {
-      const message = `云端写入完成，但商品池只回读到 ${verification.active}/${verification.total} 款可见商品。请保留本次表格并截图联系管理员核查权限或字段${sharedSuffix}`;
+      const mismatchPreview = verification.fieldMismatches
+        .slice(0, 5)
+        .map((item) => `${item.sku}（${item.fields.join("、")}）`)
+        .join("、");
+      const message = `云端写入完成，但商品池回读 ${verification.active}/${verification.total} 款可见；${fieldCheckText || "字段未提供，未执行字段核验"}${mismatchPreview ? `。字段不一致：${mismatchPreview}${verification.fieldMismatches.length > 5 ? " 等" : ""}` : ""}${sharedSuffix}`;
       setCatalogImportStatus(message, "warning");
       showToast("新品同步待核查");
     }
