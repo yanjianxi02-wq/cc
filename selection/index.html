@@ -732,21 +732,24 @@
                 <button class="primary-button" id="brandAddToFrontButton" type="button">
                   <i data-lucide="list-plus"></i><span>加入前排</span>
                 </button>
+                <button class="ghost-button" id="brandExportAllButton" type="button">
+                  <i data-lucide="download"></i><span>导出全部商品</span>
+                </button>
                 <label class="import-file">
                   <input id="brandImportFile" type="file" accept=".xlsx,.xls,.csv" />
-                  <span>选择批量修改表</span>
+                  <span>选择回填表</span>
                 </label>
                 <button class="ghost-button" id="brandImportButton" type="button">
-                  <i data-lucide="file-up"></i><span>导入批量修改</span>
+                  <i data-lucide="file-up"></i><span>导入并覆盖</span>
                 </button>
               </div>
               <details class="import-schema-card import-schema-card-compact">
-                <summary><strong>批量修改固定表头</strong><span>款号、达播价、产品等级、达人可见、风格线、达人端排序</span></summary>
+                <summary><strong>全量回填固定表头</strong><span>款号、达播价、产品等级、达人可见、风格线、达人端排序</span></summary>
                 <div class="import-schema-body">
-                  <p><b>款号为必填匹配字段。</b>下载模板后填写；空白单元格保持当前数据不变。图片、现货库存与预售库存请使用单款编辑，避免误覆盖。</p>
+                  <p><b>先导出全部商品，再在 Excel 修改后回填。</b>款号为唯一匹配字段；非空单元格会覆盖当前值，空白单元格保持不变，文件中未出现的商品不会被删除。此回填表适用于达播价、产品等级、达人可见、风格线和达人端排序；图片、现货库存与预售库存继续使用单款编辑。</p>
                   <div class="import-schema-actions">
                     <button class="ghost-button" id="brandImportTemplateButton" type="button">
-                      <i data-lucide="download"></i><span>下载批量修改模板</span>
+                      <i data-lucide="download"></i><span>下载空白回填模板</span>
                     </button>
                     <span>达人可见：达人可见 / 达人不可见；排序：正整数或“自动”。</span>
                   </div>
