@@ -590,6 +590,22 @@
           </div>
 
           <div class="hidden" id="brandDashboard">
+            <div class="admin-card default-catalog-card">
+              <div class="editor-head">
+                <div>
+                  <h3>默认达人商品库</h3>
+                  <p>未分配活动选款任务的已审核达人，只能看到此处设置的商品。</p>
+                </div>
+                <span class="task-manager-count" id="brandDefaultCatalogStatus">未配置</span>
+              </div>
+              <div class="default-catalog-actions">
+                <p id="brandDefaultCatalogHint">请先在下方商品池勾选款式，再设置默认达人商品库。</p>
+                <button class="primary-button" id="brandSetDefaultCatalogButton" type="button">
+                  <i data-lucide="package-check"></i><span>设置默认商品库</span>
+                </button>
+              </div>
+            </div>
+
             <div class="admin-card task-manager-card">
               <div class="editor-head">
                 <div>
@@ -637,8 +653,16 @@
                 </label>
               </div>
               <div class="task-assignment-head">
-                <strong>选择达人</strong>
-                <small id="brandTaskSelectionHint">先在下方商品池勾选款式</small>
+                <div class="task-assignment-copy">
+                  <strong>选择达人</strong>
+                  <small id="brandTaskSelectionHint">请先把商品池勾选款式加入任务候选</small>
+                </div>
+                <div class="task-assignment-actions">
+                  <span id="brandTaskProductCount">任务候选 0 款，已选择 0 位达人</span>
+                  <button class="ghost-button compact-button" id="brandClearTaskCandidatesButton" type="button" disabled>
+                    <i data-lucide="list-x"></i><span>清空候选</span>
+                  </button>
+                </div>
               </div>
               <div class="task-creator-list" id="brandTaskCreatorList"></div>
               <div class="task-create-actions">
@@ -722,6 +746,12 @@
                   <span>本页全选</span>
                 </label>
                 <span id="brandBatchSelectedCount">已选 0 款</span>
+                <button class="ghost-button compact-button" id="brandReviewSelectionButton" type="button" disabled>
+                  <i data-lucide="list-checks"></i><span>查看已选</span>
+                </button>
+                <button class="ghost-button compact-button" id="brandClearSelectionButton" type="button" disabled>
+                  <i data-lucide="x-circle"></i><span>清空已选</span>
+                </button>
                 <select id="brandBatchVisibility">
                   <option value="visible">批量设为达人可见</option>
                   <option value="hidden">批量设为达人不可见</option>
@@ -732,6 +762,9 @@
                 <button class="primary-button" id="brandAddToFrontButton" type="button">
                   <i data-lucide="list-plus"></i><span>加入前排</span>
                 </button>
+                <button class="primary-button" id="brandAddToTaskButton" type="button">
+                  <i data-lucide="send-to-back"></i><span>加入任务候选</span>
+                </button>
                 <button class="ghost-button" id="brandExportAllButton" type="button">
                   <i data-lucide="download"></i><span>导出全部商品</span>
                 </button>
@@ -740,21 +773,43 @@
                   <span>选择回填表</span>
                 </label>
                 <button class="ghost-button" id="brandImportButton" type="button">
-                  <i data-lucide="file-up"></i><span>导入并覆盖</span>
+                  <i data-lucide="scan-search"></i><span>预览回填</span>
                 </button>
               </div>
               <details class="import-schema-card import-schema-card-compact">
-                <summary><strong>全量回填固定表头</strong><span>款号、达播价、产品等级、达人可见、风格线、达人端排序</span></summary>
+                <summary><strong>全量回填固定表头</strong><span>款号、达播价、现货库存、预售库存/产能、产品等级、达人可见、风格线、达人端排序</span></summary>
                 <div class="import-schema-body">
-                  <p><b>先导出全部商品，再在 Excel 修改后回填。</b>款号为唯一匹配字段；非空单元格会覆盖当前值，空白单元格保持不变，文件中未出现的商品不会被删除。此回填表适用于达播价、产品等级、达人可见、风格线和达人端排序；图片、现货库存与预售库存继续使用单款编辑。</p>
+                  <p><b>先导出全部商品，再在 Excel 修改后回填。</b>款号为唯一匹配字段；系统会先显示逐款差异，确认后才写入云端。非空单元格会覆盖当前值，空白单元格保持不变，文件中未出现的商品不会被删除。此回填表适用于达播价、现货库存、预售库存/产能、产品等级、达人可见、风格线和达人端排序；图片继续使用单款编辑。</p>
                   <div class="import-schema-actions">
                     <button class="ghost-button" id="brandImportTemplateButton" type="button">
                       <i data-lucide="download"></i><span>下载空白回填模板</span>
                     </button>
-                    <span>达人可见：达人可见 / 达人不可见；排序：正整数或“自动”。</span>
+                    <span>现货库存：非负整数；预售库存/产能：数量或文字说明；达人可见：达人可见 / 达人不可见；排序：正整数或“自动”。</span>
                   </div>
                 </div>
               </details>
+              <section class="import-preview hidden" id="brandImportPreview" aria-live="polite">
+                <div class="import-preview-head">
+                  <div>
+                    <strong>批量回填预览</strong>
+                    <small id="brandImportPreviewSummary">请选择回填表后预览差异</small>
+                  </div>
+                  <span class="section-badge" id="brandImportPreviewBadge">未预览</span>
+                </div>
+                <div class="import-preview-list" id="brandImportPreviewList"></div>
+                <label class="check-control import-preview-confirm">
+                  <input id="brandImportConfirm" type="checkbox" />
+                  <span>我已核对本次差异，确认将这些字段写入云端商品池</span>
+                </label>
+                <div class="import-preview-actions">
+                  <button class="ghost-button compact-button" id="brandImportCancelButton" type="button">
+                    <i data-lucide="x"></i><span>取消本次回填</span>
+                  </button>
+                  <button class="primary-button compact-button" id="brandImportConfirmButton" type="button" disabled>
+                    <i data-lucide="save"></i><span>确认写入</span>
+                  </button>
+                </div>
+              </section>
               <div id="brandProductEditor"></div>
             </div>
           </div>

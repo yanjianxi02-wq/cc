@@ -45,6 +45,9 @@ const state = {
   },
   brandProductLimit: 40,
   brandSelectedSkus: new Set(),
+  brandTaskCandidateSkus: new Set(),
+  brandSelectionOnly: false,
+  brandImportPreview: null,
   brandFrontPreviewVisible: false,
   brandFrontDraggingSku: "",
   brandEditingSku: "",
@@ -59,6 +62,7 @@ const state = {
   brandTaskProducts: [],
   brandTaskAssignments: [],
   brandTaskCreatorIds: new Set(),
+  brandDefaultCatalog: null,
   creatorTasks: [],
   activeTaskId: localStorage.getItem("inmanActiveTaskId") || "",
   taskFeatureReady: false,
@@ -205,6 +209,9 @@ const els = {
   brandBatchVisibility: document.getElementById("brandBatchVisibility"),
   brandBatchApplyButton: document.getElementById("brandBatchApplyButton"),
   brandAddToFrontButton: document.getElementById("brandAddToFrontButton"),
+  brandAddToTaskButton: document.getElementById("brandAddToTaskButton"),
+  brandReviewSelectionButton: document.getElementById("brandReviewSelectionButton"),
+  brandClearSelectionButton: document.getElementById("brandClearSelectionButton"),
   brandFrontQueueSummary: document.getElementById("brandFrontQueueSummary"),
   brandFrontQueue: document.getElementById("brandFrontQueue"),
   brandFrontPreview: document.getElementById("brandFrontPreview"),
@@ -222,6 +229,8 @@ const els = {
   brandTaskRecommendedCount: document.getElementById("brandTaskRecommendedCount"),
   brandTaskDescription: document.getElementById("brandTaskDescription"),
   brandTaskSelectionHint: document.getElementById("brandTaskSelectionHint"),
+  brandTaskProductCount: document.getElementById("brandTaskProductCount"),
+  brandClearTaskCandidatesButton: document.getElementById("brandClearTaskCandidatesButton"),
   brandTaskCreatorList: document.getElementById("brandTaskCreatorList"),
   brandTaskCreateGuide: document.getElementById("brandTaskCreateGuide"),
   brandCreateTaskButton: document.getElementById("brandCreateTaskButton"),
@@ -230,9 +239,19 @@ const els = {
   brandTaskImportButton: document.getElementById("brandTaskImportButton"),
   brandTaskExportButton: document.getElementById("brandTaskExportButton"),
   brandTaskList: document.getElementById("brandTaskList"),
+  brandDefaultCatalogStatus: document.getElementById("brandDefaultCatalogStatus"),
+  brandDefaultCatalogHint: document.getElementById("brandDefaultCatalogHint"),
+  brandSetDefaultCatalogButton: document.getElementById("brandSetDefaultCatalogButton"),
   brandImportFile: document.getElementById("brandImportFile"),
   brandImportButton: document.getElementById("brandImportButton"),
   brandImportTemplateButton: document.getElementById("brandImportTemplateButton"),
+  brandImportPreview: document.getElementById("brandImportPreview"),
+  brandImportPreviewSummary: document.getElementById("brandImportPreviewSummary"),
+  brandImportPreviewBadge: document.getElementById("brandImportPreviewBadge"),
+  brandImportPreviewList: document.getElementById("brandImportPreviewList"),
+  brandImportConfirm: document.getElementById("brandImportConfirm"),
+  brandImportCancelButton: document.getElementById("brandImportCancelButton"),
+  brandImportConfirmButton: document.getElementById("brandImportConfirmButton"),
   brandExportAllButton: document.getElementById("brandExportAllButton"),
   brandProductSearch: document.getElementById("brandProductSearch"),
   brandProductEditor: document.getElementById("brandProductEditor"),
@@ -380,7 +399,10 @@ function renderCreatorTaskPanel() {
     state.activeTaskId = task.id;
     localStorage.setItem("inmanActiveTaskId", task.id);
   }
-  els.creatorTaskHint.textContent = "商品池仅展示当前任务指定的可见商品。";
+  const isDefaultCatalog = task.title === "默认达人商品库" && !task.due_at;
+  els.creatorTaskHint.textContent = isDefaultCatalog
+    ? "当前未分配活动任务，商品池展示品牌设置的默认可选商品。"
+    : "商品池仅展示当前任务指定的可见商品。";
   els.creatorTaskSelect.disabled = false;
   els.creatorTaskSelect.innerHTML = state.creatorTasks
     .map(
@@ -389,6 +411,7 @@ function renderCreatorTaskPanel() {
     )
     .join("");
   els.creatorTaskMeta.innerHTML = `
+    ${isDefaultCatalog ? "<span><b>默认商品库</b></span>" : ""}
     <span><b>${task.product_count || 0}</b> 款任务商品</span>
     <span><b>${task.recommended_count || "-"}</b> 建议选款数</span>
     <span>截止：<b>${formatTaskDate(task.due_at)}</b></span>
@@ -407,38 +430,76 @@ function taskStatusLabel(status) {
   }[status] || status;
 }
 
+function getDefaultCreatorCatalog() {
+  return state.brandTasks.find((task) => task.task_kind === "default_catalog" && task.status === "active") || null;
+}
+
+function renderDefaultCreatorCatalog() {
+  const defaultCatalog = getDefaultCreatorCatalog();
+  state.brandDefaultCatalog = defaultCatalog;
+  const defaultProductCount = defaultCatalog
+    ? state.brandTaskProducts.filter((item) => item.task_id === defaultCatalog.id).length
+    : 0;
+  const selectedCount = [...state.brandSelectedSkus].filter((sku) => {
+    const product = productPool.find((item) => item.sku === sku);
+    return product && !product.hidden;
+  }).length;
+
+  if (els.brandDefaultCatalogStatus) {
+    els.brandDefaultCatalogStatus.textContent = defaultCatalog ? `已配置 ${defaultProductCount} 款` : "未配置";
+  }
+  if (els.brandDefaultCatalogHint) {
+    els.brandDefaultCatalogHint.textContent = defaultCatalog
+      ? `当前默认商品库 ${defaultProductCount} 款；本次已勾选 ${selectedCount} 款。保存后会用本次勾选款式完整替换默认商品库。`
+      : `当前已勾选 ${selectedCount} 款。未分配活动任务的已审核达人，只能看到您确认设置的默认商品库。`;
+  }
+  if (els.brandSetDefaultCatalogButton) {
+    els.brandSetDefaultCatalogButton.disabled = !selectedCount || Boolean(state.adminSavingSku);
+    const label = els.brandSetDefaultCatalogButton.querySelector("span");
+    if (label) label.textContent = defaultCatalog ? "更新默认商品库" : "设置默认商品库";
+  }
+}
+
 function renderBrandTaskManager() {
+  renderDefaultCreatorCatalog();
   if (!els.brandTaskList || !els.brandTaskCreatorList) return;
   const activeCreators = state.brandCreators.filter((creator) => creator.status === "active");
-  const selectedProductCount = [...state.brandSelectedSkus].filter((sku) => {
+  const taskCandidateCount = [...state.brandTaskCandidateSkus].filter((sku) => {
     const product = productPool.find((item) => item.sku === sku);
     return product && !product.hidden;
   }).length;
   const selectedCreatorCount = state.brandTaskCreatorIds.size;
-  const activeTaskCount = state.brandTasks.filter((task) => task.status === "active").length;
+  const campaignTasks = state.brandTasks.filter((task) => task.task_kind !== "default_catalog");
+  const activeTaskCount = campaignTasks.filter((task) => task.status === "active").length;
 
   if (els.brandTaskCount) {
     els.brandTaskCount.textContent = `${activeTaskCount} 个进行中`;
   }
   if (els.brandTaskSelectionHint) {
-    els.brandTaskSelectionHint.textContent = `商品：已勾选 ${selectedProductCount} 款 · 达人：已选择 ${selectedCreatorCount} 位`;
+    els.brandTaskSelectionHint.textContent = `任务候选 ${taskCandidateCount} 款 · 已选择达人 ${selectedCreatorCount} 位`;
   }
-  const taskGuide = !selectedProductCount
-    ? "第 1 步：请在下方商品池勾选至少 1 款商品。"
+  if (els.brandTaskProductCount) {
+    els.brandTaskProductCount.textContent = `任务候选 ${taskCandidateCount} 款，已选择 ${selectedCreatorCount} 位达人`;
+  }
+  if (els.brandClearTaskCandidatesButton) {
+    els.brandClearTaskCandidatesButton.disabled = !taskCandidateCount || Boolean(state.adminSavingSku);
+  }
+  const taskGuide = !taskCandidateCount
+    ? "第 1 步：在商品池勾选款式后，点击“加入任务候选”。"
     : !selectedCreatorCount
       ? "第 2 步：请选择至少 1 位已审核达人。"
       : "商品和达人已选择，填写任务名称后即可发布。";
   if (els.brandTaskCreateGuide) {
     els.brandTaskCreateGuide.textContent = taskGuide;
-    els.brandTaskCreateGuide.classList.toggle("is-ready", Boolean(selectedProductCount && selectedCreatorCount));
+    els.brandTaskCreateGuide.classList.toggle("is-ready", Boolean(taskCandidateCount && selectedCreatorCount));
   }
   if (els.brandCreateTaskButton) {
     els.brandCreateTaskButton.disabled =
-      !selectedProductCount || !selectedCreatorCount || Boolean(state.adminSavingSku);
+      !taskCandidateCount || !selectedCreatorCount || Boolean(state.adminSavingSku);
     const taskButtonLabel = els.brandCreateTaskButton.querySelector("span");
     if (taskButtonLabel) {
-      taskButtonLabel.textContent = !selectedProductCount
-        ? "请先勾选商品"
+      taskButtonLabel.textContent = !taskCandidateCount
+        ? "请先加入任务候选"
         : !selectedCreatorCount
           ? "请选择达人"
           : "发布选款任务";
@@ -478,8 +539,8 @@ function renderBrandTaskManager() {
     return map;
   }, new Map());
 
-  els.brandTaskList.innerHTML = state.brandTasks.length
-    ? state.brandTasks
+  els.brandTaskList.innerHTML = campaignTasks.length
+    ? campaignTasks
         .map(
           (task) => `
             <article class="task-list-item">
@@ -503,7 +564,7 @@ function renderBrandTaskManager() {
           `
         )
         .join("")
-    : `<div class="empty">尚未创建选款任务。勾选货品、选择达人后即可创建。</div>`;
+    : `<div class="empty">尚未创建选款任务。将商品加入任务候选并选择达人后即可创建。</div>`;
 
   renderAccountManagement();
 }
@@ -512,7 +573,11 @@ function renderAccountManagement() {
   if (!els.creatorScopeSummary) return;
 
   const activeCreators = state.brandCreators.filter((creator) => creator.status === "active");
-  const activeTasks = state.brandTasks.filter((task) => task.status === "active");
+  const activeTasks = state.brandTasks.filter((task) => task.status === "active" && task.task_kind !== "default_catalog");
+  const defaultCatalog = getDefaultCreatorCatalog();
+  const defaultCatalogProductCount = defaultCatalog
+    ? state.brandTaskProducts.filter((item) => item.task_id === defaultCatalog.id).length
+    : 0;
   const taskById = new Map(activeTasks.map((task) => [task.id, task]));
   const taskProductCount = state.brandTaskProducts.reduce((map, item) => {
     if (!taskById.has(item.task_id)) return map;
@@ -552,7 +617,7 @@ function renderAccountManagement() {
               </div>
               <div class="account-scope-main">
                 <strong>${creatorTasks.length ? `已分配 ${creatorTasks.length} 个活动任务` : "当前未分配活动任务"}</strong>
-                <small>${creatorTasks.length ? `任务内可见 ${visibleProductCount} 款商品` : "创建并分配任务后，达人即可看到对应商品池"}</small>
+                <small>${creatorTasks.length ? `任务内可见 ${visibleProductCount} 款商品` : defaultCatalog ? `未分配活动任务，默认商品库可见 ${defaultCatalogProductCount} 款商品` : "暂未配置默认商品库或活动任务"}</small>
                 ${creatorTasks.length
                   ? `<div class="account-task-tags">${creatorTasks
                       .map(
@@ -596,6 +661,7 @@ async function loadBrandTaskData(options = {}) {
   state.brandTaskProducts = productsResult.data || [];
   state.brandTaskAssignments = assignmentsResult.data || [];
   state.brandCreators = creatorsResult.data || [];
+  state.brandDefaultCatalog = getDefaultCreatorCatalog();
   state.brandTaskCreatorIds = new Set(
     [...state.brandTaskCreatorIds].filter((id) => state.brandCreators.some((creator) => creator.user_id === id && creator.status === "active"))
   );
@@ -628,11 +694,47 @@ async function loadCreatorTasks(options = {}) {
   return true;
 }
 
+async function saveDefaultCreatorCatalog() {
+  if (!cloudEnabled || state.currentRole !== "brand") return;
+  const skus = [...state.brandSelectedSkus].filter((sku) => {
+    const product = productPool.find((item) => item.sku === sku);
+    return product && !product.hidden;
+  });
+
+  if (!skus.length) {
+    showToast("请先在商品池勾选至少 1 款可见商品");
+    return;
+  }
+  if (!window.confirm(`确定用当前勾选的 ${skus.length} 款商品${state.brandDefaultCatalog ? "替换" : "设置为"}默认达人商品库吗？未分配活动任务的达人将看到这批商品。`)) {
+    return;
+  }
+
+  state.adminSavingSku = "default-catalog";
+  renderBrandTaskManager();
+  const { error } = await cloud.rpc("set_default_creator_catalog", {
+    p_skus: skus,
+    p_recommended_count: null,
+    p_description: "未分配活动选款任务时展示的默认达人商品库。",
+  });
+  state.adminSavingSku = "";
+
+  if (error) {
+    console.error(error);
+    showToast("默认商品库保存失败，请确认云端默认商品库迁移已执行");
+    renderBrandTaskManager();
+    return;
+  }
+
+  showToast(`默认达人商品库已更新为 ${skus.length} 款`);
+  await loadBrandTaskData({ silent: true });
+  renderBrandProductEditor();
+}
+
 async function createSelectionTask() {
   if (!cloudEnabled || state.currentRole !== "brand") return;
   const title = String(els.brandTaskTitle?.value || "").trim();
   const creatorIds = [...state.brandTaskCreatorIds];
-  const skus = [...state.brandSelectedSkus].filter((sku) => {
+  const skus = [...state.brandTaskCandidateSkus].filter((sku) => {
     const product = productPool.find((item) => item.sku === sku);
     return product && !product.hidden;
   });
@@ -647,7 +749,7 @@ async function createSelectionTask() {
     return;
   }
   if (!skus.length) {
-    showToast("请先在商品池勾选要外发的款式");
+    showToast("请先将商品池款式加入任务候选");
     return;
   }
   if (!creatorIds.length) {
@@ -680,7 +782,7 @@ async function createSelectionTask() {
     renderBrandTaskManager();
     return;
   }
-  state.brandSelectedSkus.clear();
+  state.brandTaskCandidateSkus.clear();
   state.brandTaskCreatorIds.clear();
   if (els.brandTaskTitle) els.brandTaskTitle.value = "";
   if (els.brandTaskDueAt) els.brandTaskDueAt.value = "";
@@ -731,6 +833,8 @@ function replaceBaseProductPool(nextProducts, source = "cloud") {
   );
   state.catalogSource = source;
   state.brandSelectedSkus.clear();
+  state.brandTaskCandidateSkus.clear();
+  state.brandSelectionOnly = false;
   refreshProductViews();
 }
 
@@ -1664,6 +1768,50 @@ function visibilityText(product) {
   return product.hidden ? "达人不可见" : "达人可见";
 }
 
+function getBrandEditorFilteredProducts({ respectSelectionOnly = true } = {}) {
+  const query = state.brandFilters.query.trim().toLowerCase();
+  return productPool
+    .filter((product) => {
+      const categoryMatch =
+        state.brandFilters.category === "全部" || product.category === state.brandFilters.category;
+      const levelMatch = state.brandFilters.level === "全部" || product.level === state.brandFilters.level;
+      const priceMatch = matchesPrice(product, state.brandFilters.price);
+      const seasonMatch = matchesSeason(product, state.brandFilters.season);
+      const stockMatch = matchesStock(product, state.brandFilters.stock);
+      const visibilityMatch =
+        state.brandFilters.visibility === "全部" ||
+        (state.brandFilters.visibility === "visible" && !product.hidden) ||
+        (state.brandFilters.visibility === "hidden" && product.hidden);
+      const queryMatch =
+        !query ||
+        [product.sku, product.name, product.category, product.style]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(query));
+      return categoryMatch && levelMatch && priceMatch && seasonMatch && stockMatch && visibilityMatch && queryMatch;
+    })
+    .filter((product) => !respectSelectionOnly || !state.brandSelectionOnly || state.brandSelectedSkus.has(product.sku));
+}
+
+function selectedBrandProducts() {
+  const productBySku = new Map(productPool.map((product) => [product.sku, product]));
+  return [...state.brandSelectedSkus].map((sku) => productBySku.get(sku)).filter(Boolean);
+}
+
+function selectedSkusOutsideCurrentBrandFilter() {
+  const currentFilterSkus = new Set(
+    getBrandEditorFilteredProducts({ respectSelectionOnly: false }).map((product) => product.sku)
+  );
+  return [...state.brandSelectedSkus].filter((sku) => !currentFilterSkus.has(sku));
+}
+
+function confirmBrandSelectionScope(actionLabel) {
+  const outsideCount = selectedSkusOutsideCurrentBrandFilter().length;
+  if (!outsideCount) return true;
+  return window.confirm(
+    `当前已选 ${state.brandSelectedSkus.size} 款，其中 ${outsideCount} 款不在当前筛选结果中。\n\n是否继续${actionLabel}全部已选商品？`
+  );
+}
+
 function renderBrandBatchState(visibleSkus = []) {
   if (!visibleSkus.length) {
     visibleSkus = [...document.querySelectorAll("[data-brand-select]")].map(
@@ -1671,13 +1819,29 @@ function renderBrandBatchState(visibleSkus = []) {
     );
   }
   if (els.brandBatchSelectedCount) {
-    els.brandBatchSelectedCount.textContent = `已选 ${state.brandSelectedSkus.size} 款`;
+    const outsideCount = state.brandSelectionOnly ? 0 : selectedSkusOutsideCurrentBrandFilter().length;
+    els.brandBatchSelectedCount.textContent = state.brandSelectionOnly
+      ? `正在查看已选 ${state.brandSelectedSkus.size} 款`
+      : outsideCount
+        ? `已选 ${state.brandSelectedSkus.size} 款（含筛选外 ${outsideCount} 款）`
+        : `已选 ${state.brandSelectedSkus.size} 款`;
   }
   if (els.brandBatchApplyButton) {
     els.brandBatchApplyButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
   }
   if (els.brandAddToFrontButton) {
     els.brandAddToFrontButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
+  }
+  if (els.brandAddToTaskButton) {
+    els.brandAddToTaskButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
+  }
+  if (els.brandReviewSelectionButton) {
+    els.brandReviewSelectionButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
+    const label = els.brandReviewSelectionButton.querySelector("span");
+    if (label) label.textContent = state.brandSelectionOnly ? "返回筛选" : "查看已选";
+  }
+  if (els.brandClearSelectionButton) {
+    els.brandClearSelectionButton.disabled = !state.brandSelectedSkus.size || Boolean(state.adminSavingSku);
   }
   if (els.brandSelectAll) {
     const selectable = visibleSkus.length ? visibleSkus : [];
@@ -1850,34 +2014,7 @@ function renderBrandProductEditDrawer() {
 
 function renderBrandProductEditor() {
   if (!els.brandProductEditor) return;
-  const query = state.brandFilters.query.trim().toLowerCase();
-  const filteredProducts = productPool
-    .filter((product) => {
-      const categoryMatch =
-        state.brandFilters.category === "全部" || product.category === state.brandFilters.category;
-      const levelMatch =
-        state.brandFilters.level === "全部" || product.level === state.brandFilters.level;
-      const visibilityMatch =
-        state.brandFilters.visibility === "全部" ||
-        (state.brandFilters.visibility === "visible" && !product.hidden) ||
-        (state.brandFilters.visibility === "hidden" && product.hidden);
-      const seasonMatch = matchesSeason(product, state.brandFilters.season);
-      const stockMatch = matchesStock(product, state.brandFilters.stock);
-      const queryMatch =
-        !query ||
-        product.name.toLowerCase().includes(query) ||
-        product.sku.toLowerCase().includes(query) ||
-        product.style.toLowerCase().includes(query);
-      return (
-        categoryMatch &&
-        levelMatch &&
-        visibilityMatch &&
-        matchesPrice(product, state.brandFilters.price) &&
-        seasonMatch &&
-        stockMatch &&
-        queryMatch
-      );
-    });
+  const filteredProducts = getBrandEditorFilteredProducts();
   const list = filteredProducts.slice(0, state.brandProductLimit);
   const hasMore = filteredProducts.length > list.length;
 
@@ -1930,7 +2067,7 @@ function renderBrandProductEditor() {
         })
         .join("")}
         <div class="brand-product-list-footer">
-          <span>当前筛选 ${filteredProducts.length} 款，已显示 ${list.length} 款</span>
+          <span>${state.brandSelectionOnly ? "当前查看已选" : "当前筛选"} ${filteredProducts.length} 款，已显示 ${list.length} 款</span>
           ${
             hasMore
               ? `<div>
@@ -3183,6 +3320,12 @@ function isMissingBrandSaveRpcError(error) {
   );
 }
 
+function isMissingBulkBrandSaveRpcError(error) {
+  return /save_brand_product_configurations|could not find the function/i.test(
+    `${error?.code || ""} ${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`
+  );
+}
+
 function productSaveErrorMessage(error) {
   const detail = `${error?.code || ""} ${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`;
   if (/42501|permission denied|brand admin required|forbidden/i.test(detail)) {
@@ -3265,6 +3408,70 @@ async function upsertProductOverrides(payload) {
   const fallbackPayload = payload.map(({ creator_sort_priority, ...item }) => item);
   const fallback = await cloud.from("product_overrides").upsert(fallbackPayload);
   return { error: fallback.error, priorityUnavailable: !fallback.error };
+}
+
+function buildImportedProductConfigurationDraft(entry) {
+  const product = productPool.find((item) => item.sku === entry.sku);
+  const override = state.productOverrides.get(entry.sku) || {};
+  const imported = Object.fromEntries(
+    ["price", "image_url", "plan_level", "style", "stock", "presale_stock", "creator_sort_priority", "is_hidden"]
+      .map((field) => [field, Object.prototype.hasOwnProperty.call(entry, field)])
+  );
+  return {
+    sku: entry.sku,
+    price: imported.price ? entry.price : normalizePriceValue(override.price ?? product?.price),
+    image_url: imported.image_url ? entry.image_url : override.image_url || null,
+    plan_level: imported.plan_level ? entry.plan_level : override.plan_level || product?.level || null,
+    style: imported.style ? entry.style : override.style || product?.style || null,
+    stock: imported.stock ? entry.stock : normalizeStock(product?.stock),
+    presale_stock: imported.presale_stock
+      ? entry.presale_stock
+      : normalizePresaleStock(product?.presale_stock),
+    creator_sort_priority: imported.creator_sort_priority
+      ? entry.creator_sort_priority
+      : productSortPriority(product, override),
+    is_hidden: imported.is_hidden ? entry.is_hidden : Boolean(product?.hidden),
+  };
+}
+
+async function saveProductOverrideImportPayload(payload) {
+  const configurationEntries = payload.filter((entry) =>
+    Object.prototype.hasOwnProperty.call(entry, "stock") ||
+    Object.prototype.hasOwnProperty.call(entry, "presale_stock")
+  );
+  const overrideEntries = payload.filter((entry) =>
+    !Object.prototype.hasOwnProperty.call(entry, "stock") &&
+    !Object.prototype.hasOwnProperty.call(entry, "presale_stock")
+  );
+  let priorityUnavailable = false;
+
+  if (configurationEntries.length) {
+    const drafts = configurationEntries.map(buildImportedProductConfigurationDraft);
+    const batchResult = await cloud.rpc("save_brand_product_configurations", { p_items: drafts });
+    if (batchResult.error && !isMissingBulkBrandSaveRpcError(batchResult.error)) {
+      return { error: batchResult.error, priorityUnavailable };
+    }
+
+    if (batchResult.error) {
+      // Compatibility path for installations that have not yet applied the
+      // batch migration. Each item still uses the existing authorized save flow.
+      for (const entry of configurationEntries) {
+        const result = await saveBrandProductConfiguration(
+          buildImportedProductConfigurationDraft(entry),
+          entry.updated_by || ""
+        );
+        if (result.error) return { error: result.error, priorityUnavailable };
+        priorityUnavailable = priorityUnavailable || result.priorityUnavailable;
+      }
+    }
+  }
+
+  if (overrideEntries.length) {
+    const result = await upsertProductOverrides(overrideEntries);
+    if (result.error) return { error: result.error, priorityUnavailable };
+    priorityUnavailable = priorityUnavailable || result.priorityUnavailable;
+  }
+  return { error: null, priorityUnavailable };
 }
 
 async function upsertProductCatalog(payload) {
@@ -3399,6 +3606,7 @@ async function applyBatchVisibility() {
     showToast("请先勾选商品");
     return;
   }
+  if (!confirmBrandSelectionScope("批量设置")) return;
   const isHidden = els.brandBatchVisibility?.value === "hidden";
   state.adminSavingSku = "batch";
   renderBrandProductEditor();
@@ -3430,6 +3638,7 @@ async function applyBatchVisibility() {
     return;
   }
   state.brandSelectedSkus.clear();
+  state.brandSelectionOnly = false;
   showToast(
     priorityUnavailable
       ? "可见性已更新，达人排序需先升级云端"
@@ -3507,6 +3716,7 @@ async function addSelectedProductsToFront() {
     showToast("请先在下方勾选商品");
     return;
   }
+  if (!confirmBrandSelectionScope("加入达人端前排")) return;
   const visibleOrder = [...document.querySelectorAll("[data-brand-select]")]
     .map((checkbox) => checkbox.dataset.brandSelect)
     .filter((sku) => selected.has(sku));
@@ -3525,7 +3735,34 @@ async function addSelectedProductsToFront() {
     [...currentSkus, ...allowedSkus],
     `已加入 ${allowedSkus.length} 款前排推荐`
   );
-  if (saved) state.brandSelectedSkus.clear();
+  if (saved) {
+    state.brandSelectedSkus.clear();
+    state.brandSelectionOnly = false;
+    renderBrandProductEditor();
+  }
+}
+
+function addSelectedProductsToTaskCandidates() {
+  const selectedProducts = selectedBrandProducts().filter((product) => !product.hidden);
+  if (!selectedProducts.length) {
+    showToast("请先勾选至少 1 款达人可见商品");
+    return;
+  }
+  if (!confirmBrandSelectionScope("加入任务候选")) return;
+  selectedProducts.forEach((product) => state.brandTaskCandidateSkus.add(product.sku));
+  state.brandSelectedSkus.clear();
+  state.brandSelectionOnly = false;
+  renderBrandProductEditor();
+  showToast(`已加入任务候选 ${selectedProducts.length} 款，可继续选择达人并发布任务`);
+}
+
+function clearBrandTaskCandidates() {
+  const candidateCount = state.brandTaskCandidateSkus.size;
+  if (!candidateCount) return;
+  if (!window.confirm(`确定清空当前任务候选的 ${candidateCount} 款商品吗？这不会影响商品池或已发布任务。`)) return;
+  state.brandTaskCandidateSkus.clear();
+  renderBrandTaskManager();
+  showToast("任务候选已清空");
 }
 
 async function removeProductFromFront(sku) {
@@ -3649,6 +3886,8 @@ const IMPORT_SCHEMAS = {
     fields: [
       { header: "款号", example: "F18628781", note: "必填；用于匹配当前商品池。" },
       { header: "达播价", example: "139.9", note: "留空不修改；只保留一位小数。" },
+      { header: "现货库存", example: "320", note: "留空不修改；只填非负整数。旧版回填表可不含此列。", optional: true },
+      { header: "预售库存/产能", example: "15天不限量", note: "留空不修改；可填数量或产能说明。旧版回填表可不含此列。", optional: true },
       { header: "产品等级", example: "S", note: "留空不修改；仅填：S、A、B、C。" },
       { header: "达人可见", example: "达人可见", note: "留空不修改；仅填：达人可见 或 达人不可见。" },
       { header: "风格线", example: "田园-复古", note: "留空不修改。" },
@@ -3708,6 +3947,7 @@ function validateFixedImportHeaders(headers, schemaKey) {
     return { mode: recognized.length === schema.fields.length ? "template" : "compatible", recognized };
   }
   const missingHeaders = schema.fields
+    .filter((field) => !field.optional)
     .map((field) => field.header)
     .filter((header) => !existingHeaders.has(normalizeImportHeader(header)));
   if (!missingHeaders.length) return { mode: "template", recognized: schema.fields.map((field) => field.header) };
@@ -3772,6 +4012,8 @@ function exportAllProductOverrides() {
     return [
       product.sku || "",
       price == null ? "" : price,
+      normalizeStock(product.stock) ?? "",
+      normalizePresaleStock(product.presale_stock),
       product.level || "",
       visibilityText(product),
       product.style || "",
@@ -3783,6 +4025,8 @@ function exportAllProductOverrides() {
   dataSheet["!cols"] = [
     { wch: 18 },
     { wch: 12 },
+    { wch: 12 },
+    { wch: 20 },
     { wch: 14 },
     { wch: 16 },
     { wch: 24 },
@@ -3797,7 +4041,7 @@ function exportAllProductOverrides() {
     ["已导出商品数", `${products.length} 款`],
     ["导入规则", "按款号匹配已有商品；填写的单元格覆盖当前值，空白单元格保持当前值不变。"],
     ["安全边界", "文件中未出现的商品不会删除；重复款号只读取第一行；无法匹配的款号会在导入结果中提示。"],
-    ["适用字段", "达播价、产品等级、达人可见、风格线、达人端排序。图片、现货库存、预售库存/产能请继续使用单款编辑。"],
+    ["适用字段", "达播价、现货库存、预售库存/产能、产品等级、达人可见、风格线、达人端排序。图片请继续使用单款编辑。"],
     ["排序填写", "填正整数时数字越小越靠前；填“自动”可取消该款前排排序。"],
   ]);
   guideSheet["!cols"] = [{ wch: 20 }, { wch: 100 }];
@@ -3893,12 +4137,20 @@ function buildImportPayload(rows, userEmail) {
   const payload = [];
   const missingSkus = [];
   const invalidPrioritySkus = [];
+  const invalidPriceSkus = [];
+  const invalidStockSkus = [];
+  const invalidPresaleStockSkus = [];
+  const duplicateSkus = [];
   const seen = new Set();
   rows.forEach((row) => {
     const sku = String(
       pickImportValue(row, ["款号", "货号", "sku", "商品款号", "商品编码", "编码"])
     ).trim();
-    if (!sku || seen.has(sku)) return;
+    if (!sku) return;
+    if (seen.has(sku)) {
+      duplicateSkus.push(sku);
+      return;
+    }
     seen.add(sku);
     const product = productPool.find((item) => item.sku === sku);
     if (!product) {
@@ -3908,10 +4160,35 @@ function buildImportPayload(rows, userEmail) {
     const override = state.productOverrides.get(sku) || {};
     const priceRaw = pickImportValue(row, ["价格", "达播价", "售价", "price"]);
     const price = priceRaw === "" ? normalizePriceValue(override.price) : normalizePriceValue(priceRaw);
-    if (priceRaw !== "" && price == null) return;
+    if (priceRaw !== "" && price == null) {
+      invalidPriceSkus.push(sku);
+      return;
+    }
     const level = parseImportLevel(
       pickImportValue(row, ["产品等级", "等级", "品牌计划等级", "planlevel", "level"])
     );
+    const stockRaw = pickImportValue(row, ["现货库存", "合计库存", "库存", "可用库存", "stock", "inventory"]);
+    const stock = stockRaw === "" ? normalizeStock(product.stock) : normalizeStock(stockRaw);
+    if (stockRaw !== "" && stock == null) {
+      invalidStockSkus.push(sku);
+      return;
+    }
+    const presaleStockRaw = pickImportValue(row, [
+      "预售库存/产能",
+      "预售库存",
+      "预售产能",
+      "预售",
+      "产能",
+      "presale_stock",
+      "presale",
+    ]);
+    const presaleStock = presaleStockRaw === ""
+      ? normalizePresaleStock(product.presale_stock)
+      : normalizePresaleStock(presaleStockRaw);
+    if (presaleStockRaw !== "" && presaleStock.length > 100) {
+      invalidPresaleStockSkus.push(sku);
+      return;
+    }
     const visibility = parseImportVisibility(
       pickImportValue(row, ["达人可见", "是否可见", "可见", "状态", "visibility"])
     );
@@ -3930,6 +4207,8 @@ function buildImportPayload(rows, userEmail) {
     payload.push({
       sku,
       price,
+      stock,
+      presale_stock: presaleStock,
       image_url: imageUrl || override.image_url || null,
       plan_level: level ?? override.plan_level ?? null,
       style: style || override.style || null,
@@ -3937,9 +4216,19 @@ function buildImportPayload(rows, userEmail) {
       is_hidden: visibility ?? Boolean(override.is_hidden),
       updated_by: userEmail || "",
       updated_at: new Date().toISOString(),
+      _importedFields: {
+        price: priceRaw !== "",
+        stock: stockRaw !== "",
+        presale_stock: presaleStockRaw !== "",
+        image_url: Boolean(imageUrl),
+        plan_level: level !== null,
+        style: style !== "",
+        creator_sort_priority: priorityRaw !== "",
+        is_hidden: visibility !== null,
+      },
     });
   });
-  return { payload, missingSkus, invalidPrioritySkus };
+  return { payload, missingSkus, invalidPrioritySkus, invalidPriceSkus, invalidStockSkus, invalidPresaleStockSkus, duplicateSkus };
 }
 
 function buildCatalogImportPayload(rows, userEmail) {
@@ -4139,45 +4428,227 @@ async function importNewProducts() {
   }
 }
 
-async function importProductOverrides() {
+const PRODUCT_OVERRIDE_IMPORT_FIELDS = [
+  { key: "price", label: "达播价" },
+  { key: "stock", label: "现货库存" },
+  { key: "presale_stock", label: "预售库存/产能" },
+  { key: "image_url", label: "图片地址" },
+  { key: "plan_level", label: "产品等级" },
+  { key: "style", label: "风格线" },
+  { key: "creator_sort_priority", label: "达人端排序" },
+  { key: "is_hidden", label: "达人可见" },
+];
+
+function formatOverridePreviewValue(field, value) {
+  if (field === "price") {
+    const price = normalizePriceValue(value);
+    return price == null ? "未设置" : `¥${price}`;
+  }
+  if (field === "stock") return stockDisplay(value);
+  if (field === "presale_stock") return presaleStockDisplay(value);
+  if (field === "creator_sort_priority") return value == null || value === "" ? "自动" : `前排 #${value}`;
+  if (field === "is_hidden") return value ? "达人不可见" : "达人可见";
+  return value == null || value === "" ? "未设置" : String(value);
+}
+
+function isSameOverridePreviewValue(field, left, right) {
+  if (field === "price") return normalizePriceValue(left) === normalizePriceValue(right);
+  if (field === "stock") return normalizeStock(left) === normalizeStock(right);
+  if (field === "creator_sort_priority") {
+    return normalizeCreatorSortPriority(left) === normalizeCreatorSortPriority(right);
+  }
+  if (field === "is_hidden") return Boolean(left) === Boolean(right);
+  return String(left ?? "") === String(right ?? "");
+}
+
+function buildProductOverrideImportPreview(payload) {
+  const productBySku = new Map(productPool.map((product) => [product.sku, product]));
+  const items = payload.map((entry) => {
+    const product = productBySku.get(entry.sku);
+    const fields = PRODUCT_OVERRIDE_IMPORT_FIELDS
+      .filter((field) => entry._importedFields?.[field.key])
+      .map((field) => {
+        const current = field.key === "creator_sort_priority"
+          ? productSortPriority(product, state.productOverrides.get(entry.sku) || {})
+          : field.key === "stock"
+            ? product?.stock
+          : field.key === "is_hidden"
+            ? Boolean(product?.hidden)
+            : product?.[field.key];
+        const next = entry[field.key];
+        return {
+          ...field,
+          current,
+          next,
+          changed: !isSameOverridePreviewValue(field.key, current, next),
+        };
+      })
+      .filter((field) => field.changed);
+    return {
+      sku: entry.sku,
+      name: product?.name || entry.sku,
+      fields,
+      payload: entry,
+    };
+  });
+  const changedItems = items.filter((item) => item.fields.length);
+  const writePayload = changedItems.map(({ payload: entry, fields }) => {
+    const writeEntry = {
+      sku: entry.sku,
+      updated_by: entry.updated_by,
+      updated_at: entry.updated_at,
+    };
+    fields.forEach(({ key }) => {
+      writeEntry[key] = entry[key];
+    });
+    return writeEntry;
+  });
+  return {
+    items,
+    changedItems,
+    // Only write cells explicitly present in the import file and confirmed as changed.
+    writePayload,
+  };
+}
+
+function resetProductOverrideImportPreview({ resetFile = false } = {}) {
+  state.brandImportPreview = null;
+  if (els.brandImportPreview) els.brandImportPreview.classList.add("hidden");
+  if (els.brandImportPreviewList) els.brandImportPreviewList.innerHTML = "";
+  if (els.brandImportPreviewSummary) els.brandImportPreviewSummary.textContent = "请选择回填表后预览差异";
+  if (els.brandImportPreviewBadge) els.brandImportPreviewBadge.textContent = "未预览";
+  if (els.brandImportConfirm) els.brandImportConfirm.checked = false;
+  if (els.brandImportConfirmButton) els.brandImportConfirmButton.disabled = true;
+  if (resetFile && els.brandImportFile) els.brandImportFile.value = "";
+}
+
+function renderProductOverrideImportPreview(preview) {
+  if (!els.brandImportPreview || !els.brandImportPreviewList) return;
+  els.brandImportPreview.classList.remove("hidden");
+  const summaryParts = [
+    `表内匹配 ${preview.matchedCount} 款`,
+    `将修改 ${preview.diff.changedItems.length} 款`,
+    preview.unchangedCount ? `${preview.unchangedCount} 款无变化` : "",
+    preview.missingSkus.length ? `${preview.missingSkus.length} 款未匹配` : "",
+  ].filter(Boolean);
+  if (els.brandImportPreviewSummary) els.brandImportPreviewSummary.textContent = summaryParts.join(" · ");
+  if (els.brandImportPreviewBadge) els.brandImportPreviewBadge.textContent = `${preview.diff.changedItems.length} 款待确认`;
+
+  if (!preview.diff.changedItems.length) {
+    els.brandImportPreviewList.innerHTML = `<div class="import-preview-empty">表内已匹配商品与当前商品池一致，没有需要写入的字段。</div>`;
+  } else {
+    const visibleItems = preview.diff.changedItems.slice(0, 20);
+    els.brandImportPreviewList.innerHTML = `
+      ${visibleItems
+        .map(
+          (item) => `
+            <article class="import-preview-row">
+              <strong>${escapeHtml(item.name)} <span>${escapeHtml(item.sku)}</span></strong>
+              <div>
+                ${item.fields
+                  .map(
+                    (field) => `<span><b>${escapeHtml(field.label)}</b> ${escapeHtml(formatOverridePreviewValue(field.key, field.current))} <i>→</i> ${escapeHtml(formatOverridePreviewValue(field.key, field.next))}</span>`
+                  )
+                  .join("")}
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+      ${preview.diff.changedItems.length > visibleItems.length ? `<div class="import-preview-more">其余 ${preview.diff.changedItems.length - visibleItems.length} 款将在确认后按相同规则写入。</div>` : ""}
+      ${preview.missingSkus.length ? `<div class="import-preview-warning">未匹配款号不会写入：${escapeHtml(preview.missingSkus.slice(0, 12).join("、"))}${preview.missingSkus.length > 12 ? " 等" : ""}</div>` : ""}
+    `;
+  }
+  if (els.brandImportConfirm) els.brandImportConfirm.checked = false;
+  if (els.brandImportConfirmButton) els.brandImportConfirmButton.disabled = !preview.diff.changedItems.length;
+  refreshIcons();
+}
+
+async function previewProductOverrideImport() {
   if (!cloudEnabled) {
     showToast("云端后台尚未完成配置");
     return;
   }
+  if (state.currentRole !== "brand") {
+    showToast("请先以品牌方身份登录云端后台");
+    return;
+  }
   const file = els.brandImportFile?.files?.[0];
   if (!file) {
-    showToast("请先选择表格");
+    showToast("请先选择回填表");
     return;
   }
   els.brandImportButton.disabled = true;
-  showToast("正在读取表格...");
+  showToast("正在读取并校验回填表...");
   try {
     const { rows, headers } = await readImportTable(file);
     validateFixedImportHeaders(headers, "overrides");
-    const {
-      data: { user },
-    } = await cloud.auth.getUser();
-    const { payload, missingSkus, invalidPrioritySkus } = buildImportPayload(rows, user?.email || "");
-    if (!payload.length) {
+    const { data: authData, error: authError } = await cloud.auth.getUser();
+    if (authError || !authData?.user) throw authError || new Error("not-authenticated");
+    const result = buildImportPayload(rows, authData.user.email || "");
+    const invalidMessage = [
+      result.duplicateSkus.length ? `重复款号：${result.duplicateSkus.slice(0, 5).join("、")}` : "",
+      result.invalidPriceSkus.length ? `达播价格式不正确：${result.invalidPriceSkus.slice(0, 5).join("、")}` : "",
+      result.invalidStockSkus.length ? `现货库存格式不正确：${result.invalidStockSkus.slice(0, 5).join("、")}` : "",
+      result.invalidPresaleStockSkus.length ? `预售库存/产能超过 100 个字符：${result.invalidPresaleStockSkus.slice(0, 5).join("、")}` : "",
+      result.invalidPrioritySkus.length ? `达人端排序无效：${result.invalidPrioritySkus.slice(0, 5).join("、")}` : "",
+    ].filter(Boolean);
+    if (invalidMessage.length) {
+      throw new Error(`import-data-invalid:${invalidMessage.join("；")}`);
+    }
+    if (!result.payload.length) {
       showToast("表格里没有匹配到可修改款号");
       return;
     }
-    const { error, priorityUnavailable } = await upsertProductOverrides(payload);
-    if (error) {
-      console.error(error);
-      showToast("导入保存失败");
-      return;
-    }
-    els.brandImportFile.value = "";
-    showToast(`已导入修改 ${payload.length} 款${missingSkus.length ? `，${missingSkus.length} 款未匹配` : ""}${invalidPrioritySkus.length ? `，${invalidPrioritySkus.length} 款排序无效` : ""}${priorityUnavailable ? "，达人排序列待升级云端后生效" : ""}`);
+    const diff = buildProductOverrideImportPreview(result.payload);
+    state.brandImportPreview = {
+      fileName: file.name,
+      matchedCount: result.payload.length,
+      unchangedCount: diff.items.length - diff.changedItems.length,
+      missingSkus: result.missingSkus,
+      diff,
+    };
+    renderProductOverrideImportPreview(state.brandImportPreview);
+    showToast(diff.changedItems.length ? `已生成 ${diff.changedItems.length} 款回填差异，请核对后确认写入` : "未发现需要回填的字段");
+  } catch (error) {
+    console.error(error);
+    const detail = String(error?.message || "");
+    showToast(detail.startsWith("import-data-invalid:") ? detail.replace("import-data-invalid:", "") : importErrorMessage(error, "表格读取失败"));
+  } finally {
+    els.brandImportButton.disabled = false;
+  }
+}
+
+async function confirmProductOverrideImport() {
+  const preview = state.brandImportPreview;
+  if (!preview?.diff?.writePayload?.length) {
+    showToast("没有待写入的回填字段");
+    return;
+  }
+  if (!els.brandImportConfirm?.checked) {
+    showToast("请先确认已核对回填差异");
+    return;
+  }
+  if (!window.confirm(`确定写入 ${preview.diff.writePayload.length} 款商品的回填字段吗？该操作只覆盖预览中列出的字段。`)) return;
+
+  els.brandImportConfirmButton.disabled = true;
+  state.adminSavingSku = "bulk-import";
+  try {
+    const { error, priorityUnavailable } = await saveProductOverrideImportPayload(preview.diff.writePayload);
+    if (error) throw error;
+    resetProductOverrideImportPreview({ resetFile: true });
     await loadProductOverrides({ silent: true });
     renderAdmin();
     renderBrandProductEditor();
+    showToast(`已写入 ${preview.diff.writePayload.length} 款商品${priorityUnavailable ? "，达人排序列待升级云端后生效" : ""}`);
   } catch (error) {
     console.error(error);
-    showToast(importErrorMessage(error, "表格读取失败"));
+    showToast(catalogImportErrorMessage(error).replace("新品同步失败", "回填保存失败"));
   } finally {
-    els.brandImportButton.disabled = false;
+    state.adminSavingSku = "";
+    if (state.brandImportPreview && els.brandImportConfirmButton) {
+      els.brandImportConfirmButton.disabled = !els.brandImportConfirm?.checked;
+    }
   }
 }
 
@@ -4875,6 +5346,32 @@ if (els.brandBatchApplyButton) {
 if (els.brandAddToFrontButton) {
   els.brandAddToFrontButton.addEventListener("click", addSelectedProductsToFront);
 }
+if (els.brandAddToTaskButton) {
+  els.brandAddToTaskButton.addEventListener("click", addSelectedProductsToTaskCandidates);
+}
+if (els.brandReviewSelectionButton) {
+  els.brandReviewSelectionButton.addEventListener("click", () => {
+    if (!state.brandSelectedSkus.size) {
+      showToast("请先勾选商品，再查看已选范围");
+      return;
+    }
+    state.brandSelectionOnly = !state.brandSelectionOnly;
+    renderBrandProductEditor();
+  });
+}
+if (els.brandClearSelectionButton) {
+  els.brandClearSelectionButton.addEventListener("click", () => {
+    if (!state.brandSelectedSkus.size) return;
+    if (!window.confirm(`确定清空当前已选的 ${state.brandSelectedSkus.size} 款商品吗？`)) return;
+    state.brandSelectedSkus.clear();
+    state.brandSelectionOnly = false;
+    renderBrandProductEditor();
+    showToast("已清空当前批量操作选择");
+  });
+}
+if (els.brandClearTaskCandidatesButton) {
+  els.brandClearTaskCandidatesButton.addEventListener("click", clearBrandTaskCandidates);
+}
 if (els.brandFrontPreviewButton) {
   els.brandFrontPreviewButton.addEventListener("click", toggleBrandFrontPreview);
 }
@@ -4885,7 +5382,28 @@ if (els.brandFrontClearButton) {
   els.brandFrontClearButton.addEventListener("click", clearBrandFrontQueue);
 }
 if (els.brandImportButton) {
-  els.brandImportButton.addEventListener("click", importProductOverrides);
+  els.brandImportButton.addEventListener("click", previewProductOverrideImport);
+}
+if (els.brandImportFile) {
+  els.brandImportFile.addEventListener("change", () => {
+    resetProductOverrideImportPreview();
+  });
+}
+if (els.brandImportConfirm) {
+  els.brandImportConfirm.addEventListener("change", (event) => {
+    if (els.brandImportConfirmButton) {
+      els.brandImportConfirmButton.disabled = !event.target.checked || !state.brandImportPreview?.diff?.writePayload?.length;
+    }
+  });
+}
+if (els.brandImportCancelButton) {
+  els.brandImportCancelButton.addEventListener("click", () => {
+    resetProductOverrideImportPreview({ resetFile: true });
+    showToast("已取消本次回填预览");
+  });
+}
+if (els.brandImportConfirmButton) {
+  els.brandImportConfirmButton.addEventListener("click", confirmProductOverrideImport);
 }
 if (els.brandExportAllButton) {
   els.brandExportAllButton.addEventListener("click", exportAllProductOverrides);
@@ -4912,6 +5430,9 @@ if (els.brandNewProductsTemplateButton) {
 }
 if (els.brandCreateTaskButton) {
   els.brandCreateTaskButton.addEventListener("click", createSelectionTask);
+}
+if (els.brandSetDefaultCatalogButton) {
+  els.brandSetDefaultCatalogButton.addEventListener("click", saveDefaultCreatorCatalog);
 }
 if (els.brandTaskTemplateButton) {
   els.brandTaskTemplateButton.addEventListener("click", () => downloadImportTemplate("tasks"));
