@@ -3475,11 +3475,12 @@ async function saveProductOverrideImportPayload(payload) {
 }
 
 async function upsertProductCatalog(payload) {
-  const result = await cloud.from("product_catalog").upsert(payload);
+  const catalogPayload = payload.map(({ embedded_image, ...item }) => item);
+  const result = await cloud.from("product_catalog").upsert(catalogPayload);
   if (!result.error || !isPriorityColumnError(result.error)) {
     return { error: result.error, priorityUnavailable: false };
   }
-  const fallbackPayload = payload.map(({ creator_sort_priority, ...item }) => item);
+  const fallbackPayload = catalogPayload.map(({ creator_sort_priority, ...item }) => item);
   const fallback = await cloud.from("product_catalog").upsert(fallbackPayload);
   return { error: fallback.error, priorityUnavailable: !fallback.error };
 }
@@ -3499,14 +3500,14 @@ async function verifyImportedCatalogRows(targets) {
     const chunk = uniqueSkus.slice(index, index + 200);
     const { data, error } = await cloud
       .from("product_catalog")
-      .select("sku,is_active,price,stock,presale_stock")
+      .select("sku,is_active,price,stock,presale_stock,image_url")
       .in("sku", chunk);
     if (error) return { error, total: uniqueSkus.length, found: 0, active: 0, fieldMismatches: [] };
     (data || []).forEach((row) => found.set(String(row.sku || "").trim(), row));
   }
 
-  const fieldTotals = { price: 0, stock: 0, presale_stock: 0 };
-  const fieldMatched = { price: 0, stock: 0, presale_stock: 0 };
+  const fieldTotals = { price: 0, stock: 0, presale_stock: 0, image: 0 };
+  const fieldMatched = { price: 0, stock: 0, presale_stock: 0, image: 0 };
   const fieldMismatches = [];
   targetList.forEach((target) => {
     const row = found.get(target.sku);
@@ -3527,6 +3528,11 @@ async function verifyImportedCatalogRows(targets) {
       if (normalizePresaleStock(row.presale_stock) === normalizePresaleStock(target.presale_stock)) fieldMatched.presale_stock += 1;
       else mismatchedFields.push("预售库存/产能");
     }
+    if (target.verify_image) {
+      fieldTotals.image += 1;
+      if (String(row.image_url || "") === String(target.image_url || "")) fieldMatched.image += 1;
+      else mismatchedFields.push("嵌入图片");
+    }
     if (mismatchedFields.length) fieldMismatches.push({ sku: target.sku, fields: mismatchedFields });
   });
 
@@ -3539,6 +3545,54 @@ async function verifyImportedCatalogRows(targets) {
     fieldMatched,
     fieldMismatches,
   };
+}
+
+function catalogImageExtension(file) {
+  const mimeType = String(file?.type || "").toLowerCase();
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "webp";
+}
+
+async function uploadCatalogEmbeddedImages(payload, verificationTargets) {
+  const items = payload.filter((item) => item.embedded_image instanceof File);
+  if (!items.length) return { count: 0, uploadedPaths: [] };
+  if (items.length > CATALOG_EMBEDDED_IMAGE_IMPORT_LIMIT) {
+    throw new Error("embedded-image-count-exceeded");
+  }
+
+  const uploadedPaths = [];
+  const verificationBySku = new Map((verificationTargets || []).map((item) => [item.sku, item]));
+  try {
+    for (const item of items) {
+      const optimized = await optimizeImageForStorage(item.embedded_image);
+      const safeSku = String(item.sku || "product").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "product";
+      const path = `catalog/${safeSku}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${catalogImageExtension(optimized.file)}`;
+      const { error: uploadError } = await cloud.storage.from(CATALOG_IMAGE_BUCKET).upload(path, optimized.file, {
+        cacheControl: "31536000",
+        contentType: optimized.file.type,
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+      uploadedPaths.push(path);
+      const { data } = cloud.storage.from(CATALOG_IMAGE_BUCKET).getPublicUrl(path);
+      const imageUrl = data?.publicUrl || "";
+      if (!imageUrl) throw new Error("embedded-image-public-url-failed");
+      item.image_url = imageUrl;
+      const target = verificationBySku.get(item.sku);
+      if (target) {
+        target.image_url = imageUrl;
+        target.verify_image = true;
+      }
+    }
+  } catch (error) {
+    if (uploadedPaths.length) {
+      await cloud.storage.from(CATALOG_IMAGE_BUCKET).remove(uploadedPaths);
+    }
+    throw error;
+  }
+  return { count: items.length, uploadedPaths };
 }
 
 async function saveProductOverride(sku) {
@@ -3875,7 +3929,7 @@ const IMPORT_SCHEMAS = {
       { header: "预售库存/产能", example: "15天不限量", note: "可填数量或产能说明。" },
       { header: "产品等级", example: "S", note: "仅填：S、A、B、C。" },
       { header: "风格线", example: "田园-复古", note: "用于达人端筛选。" },
-      { header: "图片地址", example: "https://example.com/product.jpg", note: "可选；单款图片也可在商品池中上传或粘贴。" },
+      { header: "图片地址", example: "https://example.com/product.jpg", note: "可选；也可在这一列的对应行嵌入 JPG、PNG 或 WebP 图片（仅 .xlsx）。" },
       { header: "达人端排序", example: "10", note: "正整数越小越靠前；留空或填“自动”表示自动排序。" },
     ],
   },
@@ -4054,34 +4108,143 @@ function exportAllProductOverrides() {
   showToast(`已导出 ${products.length} 款商品，可修改后直接回填导入`);
 }
 
-function readImportTable(file) {
-  return new Promise((resolve, reject) => {
-    if (!window.XLSX) {
-      reject(new Error("xlsx-not-loaded"));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const workbook = window.XLSX.read(reader.result, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const headerRow = window.XLSX.utils.sheet_to_json(worksheet, {
-          header: 1,
-          defval: "",
-          blankrows: false,
-        })[0] || [];
-        const rows = window.XLSX.utils.sheet_to_json(worksheet, {
-          defval: "",
-        });
-        resolve({ rows, headers: headerRow });
-      } catch (error) {
-        reject(error);
-      }
-    };
-    reader.onerror = () => reject(new Error("file-read-failed"));
-    reader.readAsArrayBuffer(file);
+const CATALOG_IMAGE_BUCKET = "catalog-product-images";
+const CATALOG_EMBEDDED_IMAGE_IMPORT_LIMIT = 100;
+
+function xlsxPathJoin(basePath, targetPath) {
+  const parts = `${basePath}/${targetPath}`.split("/");
+  const normalized = [];
+  parts.forEach((part) => {
+    if (!part || part === ".") return;
+    if (part === "..") normalized.pop();
+    else normalized.push(part);
   });
+  return normalized.join("/");
+}
+
+function xlsxDirectory(path) {
+  const index = path.lastIndexOf("/");
+  return index >= 0 ? path.slice(0, index + 1) : "";
+}
+
+function xlsxRelationshipsPath(path) {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return `${xlsxDirectory(path)}_rels/${name}.rels`;
+}
+
+async function xlsxXmlFromZip(zip, path) {
+  const entry = zip.file(path);
+  if (!entry) return null;
+  const text = await entry.async("text");
+  return new DOMParser().parseFromString(text, "application/xml");
+}
+
+function xlsxElementsByLocalName(node, localName) {
+  return [...node.getElementsByTagName("*")].filter((element) => element.localName === localName);
+}
+
+function xlsxFirstChildByLocalName(node, localName) {
+  return [...node.children].find((element) => element.localName === localName) || null;
+}
+
+function xlsxTextByLocalName(node, localName) {
+  return xlsxFirstChildByLocalName(node, localName)?.textContent || "";
+}
+
+async function xlsxRelationshipMap(zip, sourcePath) {
+  const rels = await xlsxXmlFromZip(zip, xlsxRelationshipsPath(sourcePath));
+  const map = new Map();
+  if (!rels) return map;
+  xlsxElementsByLocalName(rels, "Relationship").forEach((relationship) => {
+    const id = relationship.getAttribute("Id");
+    const target = relationship.getAttribute("Target");
+    if (id && target) map.set(id, xlsxPathJoin(xlsxDirectory(sourcePath), target));
+  });
+  return map;
+}
+
+function catalogImageColumnIndex(headers) {
+  const aliases = ["图片地址", "图片链接", "主图", "图片", "image", "imageurl", "img"];
+  return (headers || []).findIndex((header) => aliases.includes(normalizeImportHeader(header)));
+}
+
+function xlsxImageMimeType(path) {
+  const extension = String(path || "").split(".").pop().toLowerCase();
+  return ({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" })[extension] || "";
+}
+
+async function extractEmbeddedImagesFromXlsx(arrayBuffer, sheetName, headers) {
+  if (!window.JSZip) throw new Error("embedded-image-parser-not-loaded");
+  const imageColumn = catalogImageColumnIndex(headers);
+  if (imageColumn < 0) return new Map();
+
+  const zip = await window.JSZip.loadAsync(arrayBuffer);
+  const workbookXml = await xlsxXmlFromZip(zip, "xl/workbook.xml");
+  const workbookRelationships = await xlsxRelationshipMap(zip, "xl/workbook.xml");
+  const sheet = workbookXml && xlsxElementsByLocalName(workbookXml, "sheet")
+    .find((item) => item.getAttribute("name") === sheetName);
+  const relationId = sheet?.getAttribute("r:id") || sheet?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+  const sheetPath = workbookRelationships.get(relationId);
+  if (!sheetPath) return new Map();
+
+  const worksheetXml = await xlsxXmlFromZip(zip, sheetPath);
+  const drawing = worksheetXml && xlsxElementsByLocalName(worksheetXml, "drawing")[0];
+  const drawingRelationId = drawing?.getAttribute("r:id") || drawing?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+  if (!drawingRelationId) return new Map();
+
+  const sheetRelationships = await xlsxRelationshipMap(zip, sheetPath);
+  const drawingPath = sheetRelationships.get(drawingRelationId);
+  if (!drawingPath) return new Map();
+
+  const drawingXml = await xlsxXmlFromZip(zip, drawingPath);
+  const drawingRelationships = await xlsxRelationshipMap(zip, drawingPath);
+  const imagesByRow = new Map();
+  if (!drawingXml) return imagesByRow;
+
+  xlsxElementsByLocalName(drawingXml, "twoCellAnchor").concat(xlsxElementsByLocalName(drawingXml, "oneCellAnchor")).forEach((anchor) => {
+    const from = xlsxFirstChildByLocalName(anchor, "from");
+    const column = Number(xlsxTextByLocalName(from || anchor, "col"));
+    const row = Number(xlsxTextByLocalName(from || anchor, "row"));
+    const blip = xlsxElementsByLocalName(anchor, "blip")[0];
+    const embedId = blip?.getAttribute("r:embed") || blip?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "embed");
+    const imagePath = drawingRelationships.get(embedId);
+    if (column !== imageColumn || !Number.isInteger(row) || row < 1 || !imagePath || imagesByRow.has(row)) return;
+    imagesByRow.set(row, imagePath);
+  });
+
+  const filesByRow = new Map();
+  for (const [row, imagePath] of imagesByRow) {
+    const mimeType = xlsxImageMimeType(imagePath);
+    const imageEntry = zip.file(imagePath);
+    if (!mimeType || !imageEntry) continue;
+    const blob = await imageEntry.async("blob");
+    const extension = imagePath.split(".").pop().toLowerCase();
+    filesByRow.set(row, new File([blob], `excel-image-${row + 1}.${extension}`, { type: mimeType }));
+  }
+  return filesByRow;
+}
+
+async function readImportTable(file) {
+  if (!window.XLSX) throw new Error("xlsx-not-loaded");
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = window.XLSX.read(arrayBuffer, { type: "array" });
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+    const headerRow = window.XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: "",
+      blankrows: false,
+    })[0] || [];
+    const rows = window.XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+    const embeddedImages = file.name.toLowerCase().endsWith(".xlsx")
+      ? await extractEmbeddedImagesFromXlsx(arrayBuffer, firstSheetName, headerRow)
+      : new Map();
+    return { rows, headers: headerRow, embeddedImages };
+  } catch (error) {
+    if (error?.message) throw error;
+    throw new Error("file-read-failed");
+  }
 }
 
 function readImportRows(file) {
@@ -4120,6 +4283,21 @@ function catalogImportErrorMessage(error) {
   }
   if (/file-read-failed/.test(detail)) {
     return "所选文件读取失败：请关闭正在占用该文件的程序后重新选择。";
+  }
+  if (/embedded-image-parser-not-loaded/.test(detail)) {
+    return "嵌入图片解析组件加载失败：请刷新页面后重新选择 .xlsx 文件。";
+  }
+  if (/embedded-image-count-exceeded/.test(detail)) {
+    return `一次最多可导入 ${CATALOG_EMBEDDED_IMAGE_IMPORT_LIMIT} 张嵌入图片，请拆分表格后重试。`;
+  }
+  if (/embedded-image-public-url-failed|storage.*bucket|bucket.*not found|object.*not found/.test(detail)) {
+    return "商品图片云存储尚未启用：请先执行本次图片存储迁移，再重新导入。";
+  }
+  if (/image-source-too-large/.test(detail)) {
+    return "嵌入图片源文件过大，无法在浏览器中安全处理；请先压缩图片后重试。";
+  }
+  if (/image-type-invalid|image-decode|image-compress/.test(detail)) {
+    return "嵌入图片格式或内容无法处理，请使用 JPG、PNG 或 WebP 图片后重试。";
   }
   if (/schema cache|column .* does not exist|relation .* does not exist|42703|42p01|pgrst204/.test(detail)) {
     return "云端商品池字段未同步：请先执行最新数据库迁移，再重新导入。";
@@ -4231,7 +4409,7 @@ function buildImportPayload(rows, userEmail) {
   return { payload, missingSkus, invalidPrioritySkus, invalidPriceSkus, invalidStockSkus, invalidPresaleStockSkus, duplicateSkus };
 }
 
-function buildCatalogImportPayload(rows, userEmail) {
+function buildCatalogImportPayload(rows, userEmail, embeddedImages = new Map()) {
   const payload = [];
   const verificationTargets = [];
   const skipped = [];
@@ -4302,6 +4480,7 @@ function buildCatalogImportPayload(rows, userEmail) {
       priorityRaw === ""
         ? normalizeCreatorSortPriority(existing?.creator_sort_priority)
         : parseImportSortPriority(priorityRaw);
+    const embeddedImage = embeddedImages.get(index + 1) || null;
     verificationTargets.push({
       sku,
       price: importedPrice,
@@ -4335,6 +4514,7 @@ function buildCatalogImportPayload(rows, userEmail) {
       is_active: true,
       updated_by: userEmail || "",
       updated_at: new Date().toISOString(),
+      embedded_image: embeddedImage,
     });
   });
   return { payload, skipped, verificationTargets };
@@ -4363,8 +4543,9 @@ async function importNewProducts() {
   els.brandNewProductsButton.disabled = true;
   els.brandNewProductsButton.setAttribute("aria-busy", "true");
   setCatalogImportStatus(`正在读取“${file.name}”（${formatImportFileSize(file.size)}）…`, "working");
+  let uploadedImagePaths = [];
   try {
-    const { rows, headers } = await readImportTable(file);
+    const { rows, headers, embeddedImages } = await readImportTable(file);
     setCatalogImportStatus(`已读取 ${rows.length} 行，正在校验固定表头…`, "working");
     const headerCheck = validateFixedImportHeaders(headers, "catalog");
     const { data: authData, error: authError } = await cloud.auth.getUser();
@@ -4372,7 +4553,7 @@ async function importNewProducts() {
       throw authError || new Error("not-authenticated");
     }
     setCatalogImportStatus("表头校验通过，正在整理有效商品行…", "working");
-    const { payload, skipped, verificationTargets } = buildCatalogImportPayload(rows, authData.user.email || "");
+    const { payload, skipped, verificationTargets } = buildCatalogImportPayload(rows, authData.user.email || "", embeddedImages);
     if (!payload.length) {
       const message = "表格中没有可更新的款号。请确认“款号”列从第二行开始填写。";
       setCatalogImportStatus(message, "error");
@@ -4382,9 +4563,16 @@ async function importNewProducts() {
     const compatibleHint = headerCheck.mode === "compatible"
       ? `已识别兼容货盘表头：${headerCheck.recognized.join("、")}。`
       : "固定表头校验通过。";
-    setCatalogImportStatus(`${compatibleHint} 准备同步 ${payload.length} 款新品到云端…`, "working");
+    const embeddedImageCount = payload.filter((item) => item.embedded_image instanceof File).length;
+    if (embeddedImageCount) {
+      setCatalogImportStatus(`${compatibleHint} 已识别 ${embeddedImageCount} 张嵌入图片，正在压缩并上传…`, "working");
+      const uploaded = await uploadCatalogEmbeddedImages(payload, verificationTargets);
+      uploadedImagePaths = uploaded.uploadedPaths;
+    }
+    setCatalogImportStatus(`${compatibleHint} 准备同步 ${payload.length} 款新品到云端${embeddedImageCount ? `（含 ${embeddedImageCount} 张嵌入图片）` : ""}…`, "working");
     const { error, priorityUnavailable } = await upsertProductCatalog(payload);
     if (error) {
+      if (uploadedImagePaths.length) await cloud.storage.from(CATALOG_IMAGE_BUCKET).remove(uploadedImagePaths);
       throw error;
     }
     setCatalogImportStatus(`云端写入完成，正在按款号回读核验 ${payload.length} 款…`, "working");
@@ -4397,6 +4585,7 @@ async function importNewProducts() {
       verification.fieldTotals.price ? `达播价 ${verification.fieldMatched.price}/${verification.fieldTotals.price}` : "",
       verification.fieldTotals.stock ? `现货库存 ${verification.fieldMatched.stock}/${verification.fieldTotals.stock}` : "",
       verification.fieldTotals.presale_stock ? `预售库存/产能 ${verification.fieldMatched.presale_stock}/${verification.fieldTotals.presale_stock}` : "",
+      verification.fieldTotals.image ? `嵌入图片 ${verification.fieldMatched.image}/${verification.fieldTotals.image}` : "",
     ].filter(Boolean).join("，");
     if (verification.error) {
       const message = `云端已完成写入 ${payload.length} 款，但回读核验失败。请刷新商品池后用款号查询${sharedSuffix}`;
