@@ -41,6 +41,7 @@ const state = {
     season: "全部",
     stock: "全部",
     visibility: "全部",
+    sort: "stock-desc",
     query: "",
   },
   brandProductLimit: 40,
@@ -151,6 +152,7 @@ const els = {
   brandSeasonFilter: document.getElementById("brandSeasonFilter"),
   brandStockFilter: document.getElementById("brandStockFilter"),
   brandVisibilityFilter: document.getElementById("brandVisibilityFilter"),
+  brandSortFilter: document.getElementById("brandSortFilter"),
   creatorNameInput: document.getElementById("creatorNameInput"),
   toast: document.getElementById("toast"),
   userPill: document.getElementById("userPill"),
@@ -1768,6 +1770,21 @@ function visibilityText(product) {
   return product.hidden ? "达人不可见" : "达人可见";
 }
 
+function compareBrandEditorProducts(a, b) {
+  const sort = state.brandFilters.sort;
+  const stockA = normalizeStock(a.stock);
+  const stockB = normalizeStock(b.stock);
+  if (sort === "stock-desc") {
+    const difference = (stockB ?? -1) - (stockA ?? -1);
+    if (difference) return difference;
+  }
+  if (sort === "stock-asc") {
+    const difference = (stockA ?? Number.MAX_SAFE_INTEGER) - (stockB ?? Number.MAX_SAFE_INTEGER);
+    if (difference) return difference;
+  }
+  return compareCreatorProductOrder(a, b);
+}
+
 function getBrandEditorFilteredProducts({ respectSelectionOnly = true } = {}) {
   const query = state.brandFilters.query.trim().toLowerCase();
   return productPool
@@ -1789,7 +1806,8 @@ function getBrandEditorFilteredProducts({ respectSelectionOnly = true } = {}) {
           .some((value) => String(value).toLowerCase().includes(query));
       return categoryMatch && levelMatch && priceMatch && seasonMatch && stockMatch && visibilityMatch && queryMatch;
     })
-    .filter((product) => !respectSelectionOnly || !state.brandSelectionOnly || state.brandSelectedSkus.has(product.sku));
+    .filter((product) => !respectSelectionOnly || !state.brandSelectionOnly || state.brandSelectedSkus.has(product.sku))
+    .sort(compareBrandEditorProducts);
 }
 
 function selectedBrandProducts() {
@@ -5570,6 +5588,13 @@ if (els.brandStockFilter) {
 if (els.brandVisibilityFilter) {
   els.brandVisibilityFilter.addEventListener("change", (event) => {
     state.brandFilters.visibility = event.target.value;
+    state.brandProductLimit = 40;
+    renderBrandProductEditor();
+  });
+}
+if (els.brandSortFilter) {
+  els.brandSortFilter.addEventListener("change", (event) => {
+    state.brandFilters.sort = event.target.value;
     state.brandProductLimit = 40;
     renderBrandProductEditor();
   });

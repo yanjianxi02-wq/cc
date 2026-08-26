@@ -208,7 +208,7 @@
           <div class="section-head compact-head">
             <div>
               <h2>货品筛选</h2>
-              <p>按类目、等级、价格和款号快速筛选货品池</p>
+              <p>按单品、款号、库存和价格快速筛选货品池</p>
             </div>
           </div>
           <div class="filter-row">
@@ -267,9 +267,17 @@
                 <option value="hidden">达人不可见</option>
               </select>
             </label>
+            <label>
+              <span>排序</span>
+              <select id="brandSortFilter">
+                <option value="stock-desc" selected>现货库存：高到低</option>
+                <option value="stock-asc">现货库存：低到高</option>
+                <option value="default">默认推荐顺序</option>
+              </select>
+            </label>
             <label class="search-field">
-              <span>款号</span>
-              <input id="brandProductSearch" type="search" placeholder="搜索款号 / 品名" />
+              <span>单品 / 款号</span>
+              <input id="brandProductSearch" type="search" placeholder="输入单品、款号、品名或风格线" />
             </label>
           </div>
         </section>
