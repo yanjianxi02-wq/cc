@@ -3555,7 +3555,7 @@ function catalogImageExtension(file) {
   return "webp";
 }
 
-async function uploadCatalogEmbeddedImages(payload, verificationTargets) {
+async function uploadCatalogEmbeddedImages(payload, verificationTargets, onProgress) {
   const items = payload.filter((item) => item.embedded_image instanceof File);
   if (!items.length) return { count: 0, uploadedPaths: [] };
   if (items.length > CATALOG_EMBEDDED_IMAGE_IMPORT_LIMIT) {
@@ -3565,7 +3565,9 @@ async function uploadCatalogEmbeddedImages(payload, verificationTargets) {
   const uploadedPaths = [];
   const verificationBySku = new Map((verificationTargets || []).map((item) => [item.sku, item]));
   try {
-    for (const item of items) {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      onProgress?.({ completed: index, total: items.length, sku: item.sku, phase: "compressing" });
       const optimized = await optimizeImageForStorage(item.embedded_image);
       const safeSku = String(item.sku || "product").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "product";
       const path = `catalog/${safeSku}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${catalogImageExtension(optimized.file)}`;
@@ -3585,10 +3587,15 @@ async function uploadCatalogEmbeddedImages(payload, verificationTargets) {
         target.image_url = imageUrl;
         target.verify_image = true;
       }
+      onProgress?.({ completed: index + 1, total: items.length, sku: item.sku, phase: "uploaded" });
     }
   } catch (error) {
     if (uploadedPaths.length) {
       await cloud.storage.from(CATALOG_IMAGE_BUCKET).remove(uploadedPaths);
+    }
+    if (error && typeof error === "object") {
+      error.embeddedImageTotal = items.length;
+      error.embeddedImageUploaded = uploadedPaths.length;
     }
     throw error;
   }
@@ -3929,7 +3936,7 @@ const IMPORT_SCHEMAS = {
       { header: "预售库存/产能", example: "15天不限量", note: "可填数量或产能说明。" },
       { header: "产品等级", example: "S", note: "仅填：S、A、B、C。" },
       { header: "风格线", example: "田园-复古", note: "用于达人端筛选。" },
-      { header: "图片地址", example: "https://example.com/product.jpg", note: "可选；也可在这一列的对应行嵌入 JPG、PNG 或 WebP 图片（仅 .xlsx）。" },
+      { header: "图片地址", example: "https://example.com/product.jpg", note: "可选；也可在这一列的对应行嵌入 JPG、PNG 或 WebP 图片（仅 .xlsx，支持 Excel/WPS 单元格图片与浮动图片，单次最多 500 张）。" },
       { header: "达人端排序", example: "10", note: "正整数越小越靠前；留空或填“自动”表示自动排序。" },
     ],
   },
@@ -4109,7 +4116,7 @@ function exportAllProductOverrides() {
 }
 
 const CATALOG_IMAGE_BUCKET = "catalog-product-images";
-const CATALOG_EMBEDDED_IMAGE_IMPORT_LIMIT = 100;
+const CATALOG_EMBEDDED_IMAGE_IMPORT_LIMIT = 500;
 
 function xlsxPathJoin(basePath, targetPath) {
   const parts = `${basePath}/${targetPath}`.split("/");
@@ -4173,6 +4180,61 @@ function xlsxImageMimeType(path) {
   return ({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" })[extension] || "";
 }
 
+function xlsxCellReference(reference) {
+  const matched = String(reference || "").match(/^([A-Za-z]+)(\d+)$/);
+  if (!matched) return null;
+  const [, letters, rowText] = matched;
+  const column = [...letters.toUpperCase()].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+  const row = Number(rowText) - 1;
+  return Number.isInteger(column) && Number.isInteger(row) ? { column, row } : null;
+}
+
+function xlsxCellImageFormulaId(formula) {
+  const matched = String(formula || "").match(/(?:_xlfn\.)?DISPIMG\(\s*"([^"]+)"/i);
+  return matched?.[1] || "";
+}
+
+async function xlsxCellImagePaths(zip) {
+  const cellImagesXml = await xlsxXmlFromZip(zip, "xl/cellimages.xml");
+  if (!cellImagesXml) return new Map();
+  const relationships = await xlsxRelationshipMap(zip, "xl/cellimages.xml");
+  const paths = new Map();
+  xlsxElementsByLocalName(cellImagesXml, "cellImage").forEach((cellImage) => {
+    const imageId = xlsxElementsByLocalName(cellImage, "cNvPr")[0]?.getAttribute("name") || "";
+    const blip = xlsxElementsByLocalName(cellImage, "blip")[0];
+    const relationId = blip?.getAttribute("r:embed") || blip?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "embed");
+    const imagePath = relationships.get(relationId);
+    if (imageId && imagePath) paths.set(imageId, imagePath);
+  });
+  return paths;
+}
+
+function xlsxCellImagesByRow(worksheetXml, imageColumn, pathsById) {
+  const imagesByRow = new Map();
+  if (!worksheetXml || !pathsById.size) return imagesByRow;
+  xlsxElementsByLocalName(worksheetXml, "c").forEach((cell) => {
+    const position = xlsxCellReference(cell.getAttribute("r"));
+    const imageId = xlsxCellImageFormulaId(xlsxTextByLocalName(cell, "f"));
+    const imagePath = pathsById.get(imageId);
+    if (!position || position.column !== imageColumn || position.row < 1 || !imagePath || imagesByRow.has(position.row)) return;
+    imagesByRow.set(position.row, imagePath);
+  });
+  return imagesByRow;
+}
+
+async function xlsxImageFilesByRow(zip, imagePathsByRow) {
+  const filesByRow = new Map();
+  for (const [row, imagePath] of imagePathsByRow) {
+    const mimeType = xlsxImageMimeType(imagePath);
+    const imageEntry = zip.file(imagePath);
+    if (!mimeType || !imageEntry) continue;
+    const blob = await imageEntry.async("blob");
+    const extension = imagePath.split(".").pop().toLowerCase();
+    filesByRow.set(row, new File([blob], `excel-image-${row + 1}.${extension}`, { type: mimeType }));
+  }
+  return filesByRow;
+}
+
 async function extractEmbeddedImagesFromXlsx(arrayBuffer, sheetName, headers) {
   if (!window.JSZip) throw new Error("embedded-image-parser-not-loaded");
   const imageColumn = catalogImageColumnIndex(headers);
@@ -4188,40 +4250,33 @@ async function extractEmbeddedImagesFromXlsx(arrayBuffer, sheetName, headers) {
   if (!sheetPath) return new Map();
 
   const worksheetXml = await xlsxXmlFromZip(zip, sheetPath);
+  const imagesByRow = new Map();
   const drawing = worksheetXml && xlsxElementsByLocalName(worksheetXml, "drawing")[0];
   const drawingRelationId = drawing?.getAttribute("r:id") || drawing?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
-  if (!drawingRelationId) return new Map();
-
-  const sheetRelationships = await xlsxRelationshipMap(zip, sheetPath);
-  const drawingPath = sheetRelationships.get(drawingRelationId);
-  if (!drawingPath) return new Map();
-
-  const drawingXml = await xlsxXmlFromZip(zip, drawingPath);
-  const drawingRelationships = await xlsxRelationshipMap(zip, drawingPath);
-  const imagesByRow = new Map();
-  if (!drawingXml) return imagesByRow;
-
-  xlsxElementsByLocalName(drawingXml, "twoCellAnchor").concat(xlsxElementsByLocalName(drawingXml, "oneCellAnchor")).forEach((anchor) => {
-    const from = xlsxFirstChildByLocalName(anchor, "from");
-    const column = Number(xlsxTextByLocalName(from || anchor, "col"));
-    const row = Number(xlsxTextByLocalName(from || anchor, "row"));
-    const blip = xlsxElementsByLocalName(anchor, "blip")[0];
-    const embedId = blip?.getAttribute("r:embed") || blip?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "embed");
-    const imagePath = drawingRelationships.get(embedId);
-    if (column !== imageColumn || !Number.isInteger(row) || row < 1 || !imagePath || imagesByRow.has(row)) return;
-    imagesByRow.set(row, imagePath);
-  });
-
-  const filesByRow = new Map();
-  for (const [row, imagePath] of imagesByRow) {
-    const mimeType = xlsxImageMimeType(imagePath);
-    const imageEntry = zip.file(imagePath);
-    if (!mimeType || !imageEntry) continue;
-    const blob = await imageEntry.async("blob");
-    const extension = imagePath.split(".").pop().toLowerCase();
-    filesByRow.set(row, new File([blob], `excel-image-${row + 1}.${extension}`, { type: mimeType }));
+  if (drawingRelationId) {
+    const sheetRelationships = await xlsxRelationshipMap(zip, sheetPath);
+    const drawingPath = sheetRelationships.get(drawingRelationId);
+    const drawingXml = drawingPath && await xlsxXmlFromZip(zip, drawingPath);
+    const drawingRelationships = drawingPath ? await xlsxRelationshipMap(zip, drawingPath) : new Map();
+    if (drawingXml) {
+      xlsxElementsByLocalName(drawingXml, "twoCellAnchor").concat(xlsxElementsByLocalName(drawingXml, "oneCellAnchor")).forEach((anchor) => {
+        const from = xlsxFirstChildByLocalName(anchor, "from");
+        const column = Number(xlsxTextByLocalName(from || anchor, "col"));
+        const row = Number(xlsxTextByLocalName(from || anchor, "row"));
+        const blip = xlsxElementsByLocalName(anchor, "blip")[0];
+        const embedId = blip?.getAttribute("r:embed") || blip?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "embed");
+        const imagePath = drawingRelationships.get(embedId);
+        if (column !== imageColumn || !Number.isInteger(row) || row < 1 || !imagePath || imagesByRow.has(row)) return;
+        imagesByRow.set(row, imagePath);
+      });
+    }
   }
-  return filesByRow;
+
+  const cellImages = xlsxCellImagesByRow(worksheetXml, imageColumn, await xlsxCellImagePaths(zip));
+  cellImages.forEach((imagePath, row) => {
+    if (!imagesByRow.has(row)) imagesByRow.set(row, imagePath);
+  });
+  return xlsxImageFilesByRow(zip, imagesByRow);
 }
 
 async function readImportTable(file) {
@@ -4275,8 +4330,13 @@ function catalogImportErrorMessage(error) {
   const basicMessage = importErrorMessage(error, "");
   if (basicMessage) return basicMessage;
   const detail = `${error?.message || ""} ${error?.code || ""} ${error?.details || ""}`.toLowerCase();
+  const embeddedImageTotal = Number(error?.embeddedImageTotal) || 0;
+  const embeddedImageUploaded = Number(error?.embeddedImageUploaded) || 0;
+  const embeddedImageProgress = embeddedImageTotal
+    ? `嵌入图片上传失败：已完成 ${embeddedImageUploaded}/${embeddedImageTotal} 张，已自动回滚本次已上传的图片。`
+    : "";
   if (/row-level security|permission denied|not authorized|forbidden|42501/.test(detail)) {
-    return "云端拒绝写入：当前登录账号没有品牌方商品池权限。请退出后以品牌方账号重新登录。";
+    return `${embeddedImageProgress}云端拒绝写入：当前登录账号没有品牌方商品池权限。请退出后以品牌方账号重新登录。`;
   }
   if (/not-authenticated|jwt expired|auth session missing|invalid jwt/.test(detail)) {
     return "登录状态已失效：请重新登录品牌方后台后再导入。";
@@ -4291,13 +4351,13 @@ function catalogImportErrorMessage(error) {
     return `一次最多可导入 ${CATALOG_EMBEDDED_IMAGE_IMPORT_LIMIT} 张嵌入图片，请拆分表格后重试。`;
   }
   if (/embedded-image-public-url-failed|storage.*bucket|bucket.*not found|object.*not found/.test(detail)) {
-    return "商品图片云存储尚未启用：请先执行本次图片存储迁移，再重新导入。";
+    return `${embeddedImageProgress}商品图片云存储尚未启用：请先执行本次图片存储迁移，再重新导入。`;
   }
   if (/image-source-too-large/.test(detail)) {
-    return "嵌入图片源文件过大，无法在浏览器中安全处理；请先压缩图片后重试。";
+    return `${embeddedImageProgress}嵌入图片源文件过大，无法在浏览器中安全处理；请先压缩图片后重试。`;
   }
   if (/image-type-invalid|image-decode|image-compress/.test(detail)) {
-    return "嵌入图片格式或内容无法处理，请使用 JPG、PNG 或 WebP 图片后重试。";
+    return `${embeddedImageProgress}嵌入图片格式或内容无法处理，请使用 JPG、PNG 或 WebP 图片后重试。`;
   }
   if (/schema cache|column .* does not exist|relation .* does not exist|42703|42p01|pgrst204/.test(detail)) {
     return "云端商品池字段未同步：请先执行最新数据库迁移，再重新导入。";
@@ -4308,7 +4368,7 @@ function catalogImportErrorMessage(error) {
   if (/failed to fetch|network|timeout|networkerror/.test(detail)) {
     return "云端连接失败：请检查网络后重新点击“更新新品”。";
   }
-  return "新品同步失败。已保留所选文件，请根据浏览器控制台错误或截图继续核查。";
+  return `${embeddedImageProgress || "新品同步失败。"}已保留所选文件，请根据浏览器控制台错误或截图继续核查。`;
 }
 
 function buildImportPayload(rows, userEmail) {
@@ -4564,10 +4624,15 @@ async function importNewProducts() {
       ? `已识别兼容货盘表头：${headerCheck.recognized.join("、")}。`
       : "固定表头校验通过。";
     const embeddedImageCount = payload.filter((item) => item.embedded_image instanceof File).length;
+    let embeddedImageSummary = "";
     if (embeddedImageCount) {
       setCatalogImportStatus(`${compatibleHint} 已识别 ${embeddedImageCount} 张嵌入图片，正在压缩并上传…`, "working");
-      const uploaded = await uploadCatalogEmbeddedImages(payload, verificationTargets);
+      const uploaded = await uploadCatalogEmbeddedImages(payload, verificationTargets, ({ completed, total, sku, phase }) => {
+        if (phase !== "uploaded" || (completed !== total && completed % 10 !== 0)) return;
+        setCatalogImportStatus(`已识别 ${total} 张嵌入图片，已上传 ${completed}/${total} 张${sku ? `（当前：${sku}）` : ""}…`, "working");
+      });
       uploadedImagePaths = uploaded.uploadedPaths;
+      embeddedImageSummary = `嵌入图片 ${uploaded.count}/${embeddedImageCount} 张上传成功，0 张失败`;
     }
     setCatalogImportStatus(`${compatibleHint} 准备同步 ${payload.length} 款新品到云端${embeddedImageCount ? `（含 ${embeddedImageCount} 张嵌入图片）` : ""}…`, "working");
     const { error, priorityUnavailable } = await upsertProductCatalog(payload);
@@ -4586,6 +4651,7 @@ async function importNewProducts() {
       verification.fieldTotals.stock ? `现货库存 ${verification.fieldMatched.stock}/${verification.fieldTotals.stock}` : "",
       verification.fieldTotals.presale_stock ? `预售库存/产能 ${verification.fieldMatched.presale_stock}/${verification.fieldTotals.presale_stock}` : "",
       verification.fieldTotals.image ? `嵌入图片 ${verification.fieldMatched.image}/${verification.fieldTotals.image}` : "",
+      embeddedImageSummary,
     ].filter(Boolean).join("，");
     if (verification.error) {
       const message = `云端已完成写入 ${payload.length} 款，但回读核验失败。请刷新商品池后用款号查询${sharedSuffix}`;
