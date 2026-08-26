@@ -204,84 +204,6 @@
           <div class="creator-task-meta" id="creatorTaskMeta"></div>
         </section>
 
-        <section class="filters hidden" data-view-panel="brand" id="brandFiltersPanel">
-          <div class="section-head compact-head">
-            <div>
-              <h2>货品筛选</h2>
-              <p>按单品、款号、库存和价格快速筛选货品池</p>
-            </div>
-          </div>
-          <div class="filter-row">
-            <label>
-              <span>类目</span>
-              <select id="brandCategoryFilter">
-                <option value="全部">全部类目</option>
-              </select>
-            </label>
-            <label>
-              <span>等级</span>
-              <select id="brandLevelFilter">
-                <option value="全部">全部等级</option>
-                <option value="S">S级</option>
-                <option value="A">A级</option>
-                <option value="B">B级</option>
-                <option value="C">C级</option>
-              </select>
-            </label>
-            <label>
-              <span>价格</span>
-              <select id="brandPriceFilter">
-                <option value="全部">全部价格</option>
-                <option value="1-50">1-50元</option>
-                <option value="50-100">50-100元</option>
-                <option value="100-300">100-300元</option>
-                <option value="300-500">300-500元</option>
-                <option value="500-1000">500-1000元</option>
-                <option value="1000+">&gt;1000元</option>
-              </select>
-            </label>
-            <label>
-              <span>季节</span>
-              <select id="brandSeasonFilter">
-                <option value="全部">全部季节</option>
-                <option value="春">春</option>
-                <option value="夏">夏</option>
-                <option value="秋">秋</option>
-                <option value="冬">冬</option>
-              </select>
-            </label>
-            <label>
-              <span>库存</span>
-              <select id="brandStockFilter">
-                <option value="全部">全部库存</option>
-                <option value="0-100">100以下</option>
-                <option value="100-500">100-500</option>
-                <option value="500+">500以上</option>
-              </select>
-            </label>
-            <label>
-              <span>达人可见</span>
-              <select id="brandVisibilityFilter">
-                <option value="全部">全部状态</option>
-                <option value="visible">达人可见</option>
-                <option value="hidden">达人不可见</option>
-              </select>
-            </label>
-            <label>
-              <span>排序</span>
-              <select id="brandSortFilter">
-                <option value="stock-desc" selected>现货库存：高到低</option>
-                <option value="stock-asc">现货库存：低到高</option>
-                <option value="default">默认推荐顺序</option>
-              </select>
-            </label>
-            <label class="search-field">
-              <span>单品 / 款号</span>
-              <input id="brandProductSearch" type="search" placeholder="输入单品、款号、品名或风格线" />
-            </label>
-          </div>
-        </section>
-
         <section class="filters" data-view-panel="selection">
           <div class="filter-row">
             <label>
@@ -748,6 +670,24 @@
                   <p>保存后达人端商品卡片会自动同步显示</p>
                 </div>
               </div>
+              <section class="filters brand-editor-filters" id="brandFiltersPanel">
+                <div class="section-head compact-head">
+                  <div>
+                    <h3>商品筛选</h3>
+                    <p>按单品、款号、库存和价格快速筛选下方商品池</p>
+                  </div>
+                </div>
+                <div class="filter-row">
+                  <label><span>类目</span><select id="brandCategoryFilter"><option value="全部">全部类目</option></select></label>
+                  <label><span>等级</span><select id="brandLevelFilter"><option value="全部">全部等级</option><option value="S">S级</option><option value="A">A级</option><option value="B">B级</option><option value="C">C级</option></select></label>
+                  <label><span>价格</span><select id="brandPriceFilter"><option value="全部">全部价格</option><option value="1-50">1-50元</option><option value="50-100">50-100元</option><option value="100-300">100-300元</option><option value="300-500">300-500元</option><option value="500-1000">500-1000元</option><option value="1000+">&gt;1000元</option></select></label>
+                  <label><span>季节</span><select id="brandSeasonFilter"><option value="全部">全部季节</option><option value="春">春</option><option value="夏">夏</option><option value="秋">秋</option><option value="冬">冬</option></select></label>
+                  <label><span>库存</span><select id="brandStockFilter"><option value="全部">全部库存</option><option value="0-100">100以下</option><option value="100-500">100-500</option><option value="500+">500以上</option></select></label>
+                  <label><span>达人可见</span><select id="brandVisibilityFilter"><option value="全部">全部状态</option><option value="visible">达人可见</option><option value="hidden">达人不可见</option></select></label>
+                  <label><span>排序</span><select id="brandSortFilter"><option value="stock-desc" selected>现货库存：高到低</option><option value="stock-asc">现货库存：低到高</option><option value="default">默认推荐顺序</option></select></label>
+                  <label class="search-field"><span>单品 / 款号</span><input id="brandProductSearch" type="search" placeholder="输入单品、款号、品名或风格线" /></label>
+                </div>
+              </section>
               <div class="batch-toolbar">
                 <label class="batch-select-all">
                   <input id="brandSelectAll" type="checkbox" />

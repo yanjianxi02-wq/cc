@@ -452,6 +452,16 @@ h1 {
   margin-bottom: 14px;
 }
 
+.brand-editor-filters {
+  padding: 0 0 16px;
+  margin: 0 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-editor-filters .section-head {
+  margin-bottom: 12px;
+}
+
 .filter-row {
   display: grid;
   grid-template-columns: 170px 180px 170px minmax(220px, 1fr);
