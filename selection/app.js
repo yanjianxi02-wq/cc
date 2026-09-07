@@ -1076,17 +1076,8 @@ function pruneHiddenSelections() {
   });
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("file-read-failed"));
-    reader.readAsDataURL(file);
-  });
-}
-
-// The catalog stores the override image as a data URL. Accept large source files,
-// but optimize them before storing so the catalog stays responsive and reliable.
+// Product images are uploaded to the public catalog bucket. Optimize source files
+// first so browser processing and cloud storage remain reliable.
 const IMAGE_SOURCE_PREFERRED_BYTES = 500 * 1024 * 1024;
 const IMAGE_BROWSER_HARD_LIMIT_BYTES = 500 * 1024 * 1024;
 const IMAGE_STORAGE_TARGET_BYTES = Math.floor(1.4 * 1024 * 1024);
@@ -1141,7 +1132,8 @@ function fitImageDimensions(width, height, maxEdge) {
 async function optimizeImageForStorage(file) {
   if (!file?.type?.startsWith("image/")) throw new Error("image-type-invalid");
   if (file.size > IMAGE_BROWSER_HARD_LIMIT_BYTES) throw new Error("image-source-too-large");
-  if (file.size <= IMAGE_STORAGE_TARGET_BYTES) {
+  const supportedCloudMimeType = ["image/jpeg", "image/png", "image/webp"].includes(String(file.type || "").toLowerCase());
+  if (file.size <= IMAGE_STORAGE_TARGET_BYTES && supportedCloudMimeType) {
     return { file, compressed: false, sourceSize: file.size, outputSize: file.size };
   }
 
@@ -1197,8 +1189,8 @@ function imageDraftHint(sku, hasOverrideImage) {
   const source = draft.source === "paste" ? "已粘贴图片" : "已选择图片";
   const size = formatImageBytes(draft.file.size);
   return draft.file.size > IMAGE_STORAGE_TARGET_BYTES
-    ? `${source}（${size}），保存时自动压缩`
-    : `${source}（${size}），保存时将直接使用`;
+    ? `${source}（${size}），保存时自动压缩并上传云端`
+    : `${source}（${size}），保存时上传云端`;
 }
 
 function updateImageDraftStatus(sku) {
@@ -3292,16 +3284,18 @@ async function collectOverrideDraft(sku) {
   let imageUrl = null;
   let imageCompressed = false;
   let imageOutputSize = null;
+  let imageStoragePath = "";
   const stagedImage = state.productImageDrafts.get(sku)?.file || draft.image_file;
   if (stagedImage) {
-    const optimizedImage = await optimizeImageForStorage(stagedImage);
+    const uploadedImage = await uploadProductImageDraft(sku, stagedImage);
     state.productImageDrafts.set(sku, {
-      file: optimizedImage.file,
+      file: uploadedImage.file,
       source: state.productImageDrafts.get(sku)?.source || "upload",
     });
-    imageUrl = await readFileAsDataUrl(optimizedImage.file);
-    imageCompressed = optimizedImage.compressed;
-    imageOutputSize = optimizedImage.outputSize;
+    imageUrl = uploadedImage.imageUrl;
+    imageCompressed = uploadedImage.compressed;
+    imageOutputSize = uploadedImage.outputSize;
+    imageStoragePath = uploadedImage.path;
   } else {
     imageUrl = state.productOverrides.get(sku)?.image_url || null;
   }
@@ -3319,6 +3313,7 @@ async function collectOverrideDraft(sku) {
     is_hidden: draft.is_hidden === "true",
     image_compressed: imageCompressed,
     image_output_size: imageOutputSize,
+    image_storage_path: imageStoragePath,
   };
 }
 
@@ -3359,6 +3354,23 @@ function productSaveErrorMessage(error) {
     return "该款不在当前云端商品池，无法保存";
   }
   return "商品配置保存失败，请稍后重试";
+}
+
+function productImageUploadErrorMessage(error) {
+  const detail = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.cause?.message || ""}`;
+  if (/42501|permission denied|row-level security|forbidden|brand admin required/i.test(detail)) {
+    return "图片上传被云端拒绝，请确认使用品牌方账号登录";
+  }
+  if (/bucket.*not found|bucket.*does not exist|catalog-product-images/i.test(detail)) {
+    return "云端图片库尚未配置，请联系管理员执行图片库迁移";
+  }
+  if (/mime type|allowed.*type|unsupported.*type|invalid.*type/i.test(detail)) {
+    return "图片格式不支持，请换用 JPG、PNG 或 WebP";
+  }
+  if (/payload too large|file size|413|too large/i.test(detail)) {
+    return "图片处理后仍过大，请换用更小的 JPG、PNG 或 WebP";
+  }
+  return "图片上传云端失败，请稍后重试";
 }
 
 async function saveBrandProductConfiguration(draft, userEmail) {
@@ -3641,6 +3653,11 @@ async function saveProductOverride(sku) {
       showToast("图片自动压缩失败，请换用 JPG、PNG 或 WebP 后重试");
       return;
     }
+    if (/^image-upload/.test(error.code || "") || /^image-upload/.test(error.message || "")) {
+      console.error(error);
+      showToast(productImageUploadErrorMessage(error));
+      return;
+    }
     showToast("图片读取失败");
     return;
   }
@@ -3657,11 +3674,19 @@ async function saveProductOverride(sku) {
   const {
     data: { user },
   } = await cloud.auth.getUser();
-  const { image_compressed: imageCompressed, image_output_size: imageOutputSize } = draft;
+  const {
+    image_compressed: imageCompressed,
+    image_output_size: imageOutputSize,
+    image_storage_path: imageStoragePath,
+  } = draft;
   const { error, priorityUnavailable } = await saveBrandProductConfiguration(draft, user?.email || "");
   state.adminSavingSku = "";
   if (error) {
     console.error(error);
+    if (imageStoragePath) {
+      const { error: cleanupError } = await cloud.storage.from(CATALOG_IMAGE_BUCKET).remove([imageStoragePath]);
+      if (cleanupError) console.warn("未能清理未关联图片", cleanupError);
+    }
     showToast(productSaveErrorMessage(error));
     renderBrandProductEditor();
     return;
@@ -4135,6 +4160,36 @@ function exportAllProductOverrides() {
 
 const CATALOG_IMAGE_BUCKET = "catalog-product-images";
 const CATALOG_EMBEDDED_IMAGE_IMPORT_LIMIT = 500;
+
+async function uploadProductImageDraft(sku, sourceFile) {
+  const optimized = await optimizeImageForStorage(sourceFile);
+  const safeSku = String(sku || "product").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "product";
+  const path = `catalog/${safeSku}/manual-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${catalogImageExtension(optimized.file)}`;
+  const { error: uploadError } = await cloud.storage.from(CATALOG_IMAGE_BUCKET).upload(path, optimized.file, {
+    cacheControl: "31536000",
+    contentType: optimized.file.type,
+    upsert: false,
+  });
+  if (uploadError) {
+    const error = new Error(uploadError.message || "image-upload-failed");
+    error.code = "image-upload-failed";
+    error.cause = uploadError;
+    throw error;
+  }
+  const { data } = cloud.storage.from(CATALOG_IMAGE_BUCKET).getPublicUrl(path);
+  const imageUrl = data?.publicUrl || "";
+  if (!imageUrl) {
+    await cloud.storage.from(CATALOG_IMAGE_BUCKET).remove([path]);
+    const error = new Error("image-upload-public-url-failed");
+    error.code = "image-upload-public-url-failed";
+    throw error;
+  }
+  return {
+    ...optimized,
+    path,
+    imageUrl,
+  };
+}
 
 function xlsxPathJoin(basePath, targetPath) {
   const parts = `${basePath}/${targetPath}`.split("/");
